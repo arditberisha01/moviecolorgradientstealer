@@ -1,5 +1,5 @@
 from fastapi import APIRouter, UploadFile, File, HTTPException, Form, Body
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 import shutil
 import os
 import uuid
@@ -9,6 +9,7 @@ import numpy as np
 from PIL import Image
 import io
 from app.core.lut_generator import process_video_to_lut, process_image_to_lut, process_url_to_lut, process_movie_query_to_lut
+from app.core.storage import storage_manager
 
 router = APIRouter()
 
@@ -31,10 +32,18 @@ async def upload_video(file: UploadFile = File(...)):
     file_id = str(uuid.uuid4())
     file_ext = file.filename.split('.')[-1]
     video_filename = f"{file_id}.{file_ext}"
-    video_path = os.path.join(UPLOAD_DIR, video_filename)
     
+    # Save locally first (for processing)
+    video_path = os.path.join(UPLOAD_DIR, video_filename)
     with open(video_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
+    
+    # Optionally upload to Supabase
+    if storage_manager.is_enabled():
+        try:
+            await storage_manager.upload_file(video_path, f"uploads/{video_filename}")
+        except Exception as e:
+            print(f"Supabase upload failed (continuing with local): {e}")
         
     return {"file_id": file_id, "filename": video_filename}
 
@@ -56,6 +65,12 @@ async def generate_lut(file_id: str, timestamp: float = Body(None, embed=True)):
     
     try:
         process_video_to_lut(video_path, lut_path, frame_path, timestamp)
+        
+        # Upload results to Supabase
+        if storage_manager.is_enabled():
+            await storage_manager.upload_file(lut_path, f"generated/{lut_filename}")
+            await storage_manager.upload_file(frame_path, f"generated/{frame_filename}")
+            
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
         
@@ -76,14 +91,17 @@ async def generate_from_image(file: UploadFile = File(...)):
         contents = await file.read()
         image = Image.open(io.BytesIO(contents))
         
-        # Convert to RGB and save for preview
         if image.mode in ('RGBA', 'P'): 
             image = image.convert('RGB')
         image.save(frame_path)
         
-        # Convert to numpy for processing
         image_np = np.array(image)
         process_image_to_lut(image_np, lut_path)
+        
+        # Upload to Supabase
+        if storage_manager.is_enabled():
+            await storage_manager.upload_file(lut_path, f"generated/{lut_filename}")
+            await storage_manager.upload_file(frame_path, f"generated/{frame_filename}")
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -103,6 +121,11 @@ async def generate_from_url(request: UrlRequest):
     
     try:
         process_url_to_lut(request.url, request.timestamp, lut_path, frame_path)
+        
+        if storage_manager.is_enabled():
+            await storage_manager.upload_file(lut_path, f"generated/{lut_filename}")
+            await storage_manager.upload_file(frame_path, f"generated/{frame_filename}")
+            
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
         
@@ -121,8 +144,12 @@ async def analyze_movie(request: MovieRequest):
     
     try:
         process_movie_query_to_lut(request.query, lut_path, frame_path)
+        
+        if storage_manager.is_enabled():
+            await storage_manager.upload_file(lut_path, f"generated/{lut_filename}")
+            await storage_manager.upload_file(frame_path, f"generated/{frame_filename}")
+            
     except Exception as e:
-        # Print error for debugging
         print(f"Movie analysis error: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to analyze movie: {str(e)}")
         
@@ -133,6 +160,13 @@ async def analyze_movie(request: MovieRequest):
 
 @router.get("/download/generated/{filename}")
 async def download_file(filename: str):
+    # Try Supabase first
+    if storage_manager.is_enabled():
+        public_url = storage_manager.get_public_url(f"generated/{filename}")
+        if public_url:
+            return RedirectResponse(url=public_url)
+    
+    # Fallback to local
     file_path = os.path.join(GENERATED_DIR, filename)
     if not os.path.exists(file_path):
         raise HTTPException(status_code=404, detail="File not found")

@@ -8,3 +8,5 @@ scikit-image
 scipy
 yt-dlp
 ffmpeg-python
+supabase
+python-dotenv

@@ -1,6 +1,10 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.api.endpoints import router
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 app = FastAPI(title="Video Color Grade Stealer")
 
@@ -18,4 +22,3 @@ app.include_router(router, prefix="/api")
 @app.get("/")
 def read_root():
     return {"message": "Welcome to Video Color Grade Stealer API"}
-
