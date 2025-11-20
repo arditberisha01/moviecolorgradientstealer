@@ -37,67 +37,98 @@ def extract_frame_from_video(video_path: str, timestamp: float = None) -> np.nda
 def get_video_url_from_query(query: str) -> str:
     """
     Searches YouTube for the query (e.g. "Dune trailer") and returns the first video URL.
+    Uses aggressive bot bypass with multiple fallback strategies.
     """
+    # Strategy 1: Try with iOS client (most reliable)
     ydl_opts = {
-        'format': 'best[ext=mp4]',
+        'format': 'best[ext=mp4]/best',
         'default_search': 'ytsearch1:',
         'quiet': True,
         'no_warnings': True,
-        'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'socket_timeout': 30,
         'extractor_args': {
             'youtube': {
-                'player_client': ['android', 'web'],
-                'skip': ['hls', 'dash']
+                'player_client': ['ios', 'android', 'mweb'],
+                'skip': ['hls', 'dash', 'translated_subs']
             }
         },
         'http_headers': {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-            'Accept-Language': 'en-us,en;q=0.5',
-            'Sec-Fetch-Mode': 'navigate',
+            'User-Agent': 'com.google.ios.youtube/19.09.3 (iPhone14,3; U; CPU iOS 15_6 like Mac OS X)',
+            'Accept': '*/*',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Accept-Encoding': 'gzip, deflate',
         }
     }
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        info = ydl.extract_info(query, download=False)
-        if 'entries' in info:
-            video_url = info['entries'][0]['url']
-        else:
-            video_url = info['url']
-            
-    return video_url
+    
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(query, download=False)
+            if 'entries' in info:
+                video_url = info['entries'][0]['url']
+            else:
+                video_url = info['url']
+            return video_url
+    except Exception as e:
+        # Strategy 2: Try with Android client
+        print(f"iOS client failed, trying Android: {e}")
+        ydl_opts['extractor_args']['youtube']['player_client'] = ['android']
+        ydl_opts['http_headers']['User-Agent'] = 'com.google.android.youtube/17.36.4 (Linux; U; Android 12; GB) gzip'
+        
+        try:
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(query, download=False)
+                if 'entries' in info:
+                    video_url = info['entries'][0]['url']
+                else:
+                    video_url = info['url']
+                return video_url
+        except Exception as e2:
+            raise RuntimeError(f"Failed to extract video URL after multiple attempts: {str(e2)}")
 
 def extract_frame_from_url(url: str, timestamp: float = 0) -> np.ndarray:
     """
     Extracts a frame from a URL using yt-dlp and ffmpeg streaming.
+    Uses aggressive bot bypass with multiple fallback strategies.
     """
     # 1. Get direct stream URL (if not already a direct link)
     # If it's a youtube link, resolve it. If it's a direct stream, use it.
     if "youtube.com" in url or "youtu.be" in url or "vimeo.com" in url:
+        # Strategy 1: Try with iOS client (most reliable)
         ydl_opts = {
             'format': 'best[ext=mp4]/best',
             'quiet': True,
             'no_warnings': True,
             'socket_timeout': 30,
-            'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
             'extractor_args': {
                 'youtube': {
-                    'player_client': ['android', 'web'],
-                    'skip': ['hls', 'dash']
+                    'player_client': ['ios', 'android', 'mweb'],
+                    'skip': ['hls', 'dash', 'translated_subs']
                 }
             },
             'http_headers': {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-                'Accept-Language': 'en-us,en;q=0.5',
-                'Sec-Fetch-Mode': 'navigate',
+                'User-Agent': 'com.google.ios.youtube/19.09.3 (iPhone14,3; U; CPU iOS 15_6 like Mac OS X)',
+                'Accept': '*/*',
+                'Accept-Language': 'en-US,en;q=0.9',
+                'Accept-Encoding': 'gzip, deflate',
             }
         }
+        
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(url, download=False)
                 video_url = info['url']
         except Exception as e:
-            raise RuntimeError(f"Failed to extract video URL: {str(e)}")
+            # Strategy 2: Try with Android client
+            print(f"iOS client failed, trying Android: {e}")
+            ydl_opts['extractor_args']['youtube']['player_client'] = ['android']
+            ydl_opts['http_headers']['User-Agent'] = 'com.google.android.youtube/17.36.4 (Linux; U; Android 12; GB) gzip'
+            
+            try:
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    info = ydl.extract_info(url, download=False)
+                    video_url = info['url']
+            except Exception as e2:
+                raise RuntimeError(f"Failed to extract video URL: {str(e2)}")
     else:
         video_url = url
         
@@ -121,29 +152,43 @@ def extract_frame_from_url(url: str, timestamp: float = 0) -> np.ndarray:
 def extract_multiple_frames_from_url(url: str, num_samples: int = 5) -> list[np.ndarray]:
     """
     Extracts multiple random frames from a YouTube URL to analyze the overall look.
+    Uses aggressive bot bypass with multiple fallback strategies.
     """
+    # Strategy 1: Try with iOS client (most reliable)
     ydl_opts = {
-        'format': 'best[ext=mp4]',
+        'format': 'best[ext=mp4]/best',
         'quiet': True,
         'no_warnings': True,
-        'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'socket_timeout': 30,
         'extractor_args': {
             'youtube': {
-                'player_client': ['android', 'web'],
-                'skip': ['hls', 'dash']
+                'player_client': ['ios', 'android', 'mweb'],
+                'skip': ['hls', 'dash', 'translated_subs']
             }
         },
         'http_headers': {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-            'Accept-Language': 'en-us,en;q=0.5',
-            'Sec-Fetch-Mode': 'navigate',
+            'User-Agent': 'com.google.ios.youtube/19.09.3 (iPhone14,3; U; CPU iOS 15_6 like Mac OS X)',
+            'Accept': '*/*',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Accept-Encoding': 'gzip, deflate',
         }
     }
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        info = ydl.extract_info(url, download=False)
-        video_url = info['url']
-        duration = info.get('duration', 60) # Default to 60s if unknown
+    
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=False)
+            video_url = info['url']
+            duration = info.get('duration', 60)
+    except Exception as e:
+        # Strategy 2: Try with Android client
+        print(f"iOS client failed, trying Android: {e}")
+        ydl_opts['extractor_args']['youtube']['player_client'] = ['android']
+        ydl_opts['http_headers']['User-Agent'] = 'com.google.android.youtube/17.36.4 (Linux; U; Android 12; GB) gzip'
+        
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=False)
+            video_url = info['url']
+            duration = info.get('duration', 60)
 
     frames = []
     # Pick random timestamps from 10% to 90% of the video
