@@ -1,8 +1,9 @@
 import os
 from supabase import create_client, Client
-from typing import Optional
+from typing import Optional, List
 import asyncio
 from functools import wraps
+from datetime import datetime, timedelta
 
 class StorageManager:
     def __init__(self):
@@ -48,12 +49,50 @@ class StorageManager:
         """Check if Supabase storage is enabled."""
         return self.supabase is not None
     
-    async def upload_file(self, local_path: str, remote_path: str) -> Optional[str]:
-        """Upload a file to Supabase Storage."""
+    async def cleanup_old_files(self, max_age_hours: int = 1):
+        """
+        Delete old files from Supabase to stay within 1GB free limit.
+        Deletes files older than max_age_hours.
+        """
+        if not self.supabase:
+            return
+            
+        try:
+            # List all files in uploads and generated folders
+            folders = ["uploads", "generated"]
+            
+            for folder in folders:
+                try:
+                    files = self.supabase.storage.from_(self.bucket_name).list(folder)
+                    
+                    # Delete each file (oldest-first strategy for free plan)
+                    for file in files:
+                        file_path = f"{folder}/{file['name']}"
+                        try:
+                            self.supabase.storage.from_(self.bucket_name).remove([file_path])
+                            print(f"🗑️  Deleted old file: {file_path}")
+                        except Exception as e:
+                            print(f"Error deleting {file_path}: {e}")
+                            
+                except Exception as e:
+                    print(f"Error listing files in {folder}: {e}")
+                    
+        except Exception as e:
+            print(f"Cleanup error: {e}")
+    
+    async def upload_file(self, local_path: str, remote_path: str, cleanup_after: bool = True) -> Optional[str]:
+        """
+        Upload a file to Supabase Storage.
+        If cleanup_after=True, deletes old files to free space (for 1GB free plan).
+        """
         if not self.supabase:
             return None
             
         try:
+            # Cleanup old files BEFORE uploading to ensure space
+            if cleanup_after:
+                await self.cleanup_old_files()
+            
             with open(local_path, 'rb') as f:
                 file_data = f.read()
                 
@@ -61,7 +100,7 @@ class StorageManager:
             response = self.supabase.storage.from_(self.bucket_name).upload(
                 remote_path,
                 file_data,
-                file_options={"content-type": self._get_content_type(local_path)}
+                file_options={"content-type": self._get_content_type(local_path), "upsert": "true"}
             )
             
             return self.get_public_url(remote_path)
@@ -82,6 +121,19 @@ class StorageManager:
             print(f"Error getting public URL for {remote_path}: {e}")
             return None
     
+    async def delete_file(self, remote_path: str) -> bool:
+        """Delete a specific file from Supabase Storage."""
+        if not self.supabase:
+            return False
+            
+        try:
+            self.supabase.storage.from_(self.bucket_name).remove([remote_path])
+            print(f"🗑️  Deleted: {remote_path}")
+            return True
+        except Exception as e:
+            print(f"Error deleting {remote_path}: {e}")
+            return False
+    
     def _get_content_type(self, file_path: str) -> str:
         """Determine content type based on file extension."""
         ext = file_path.split('.')[-1].lower()
@@ -97,4 +149,3 @@ class StorageManager:
 
 # Singleton instance
 storage_manager = StorageManager()
-

@@ -8,7 +8,7 @@ A web platform that extracts color grading from videos and generates downloadabl
 - **URL Analysis**: Paste YouTube/Vimeo links for instant analysis
 - **Movie Search**: Type a movie name to analyze its trailer's color grade
 - **Multi-frame Sampling**: Aggregates color stats from multiple frames for accurate LUTs
-- **Cloud Storage**: Integrated with Supabase for scalable file storage
+- **Cloud Storage**: Integrated with Supabase for scalable file storage (with auto-cleanup for free tier)
 
 ## Quick Start
 
@@ -52,13 +52,17 @@ DATA_DIR=/data
 
 If Supabase credentials are not provided, the app will use local file storage.
 
+## Deployment
+
+See [DEPLOYMENT.md](DEPLOYMENT.md) for detailed instructions on deploying to Render.
+
 ## Tech Stack
 
 **Backend:**
 - FastAPI
 - OpenCV & FFmpeg
 - yt-dlp (YouTube/Vimeo support)
-- Supabase Storage
+- Supabase Storage (with auto-cleanup for 1GB free tier)
 
 **Frontend:**
 - React + TypeScript
@@ -72,8 +76,8 @@ If Supabase credentials are not provided, the app will use local file storage.
 2. **Color Analysis**: Converts frames to LAB color space and calculates mean/std dev
 3. **LUT Generation**: Applies Reinhard color transfer to a 3D identity LUT
 4. **Output**: Generates standard `.cube` files compatible with Premiere Pro, DaVinci Resolve, Final Cut Pro
+5. **Auto-Cleanup**: Automatically deletes old files from Supabase to stay within 1GB free tier
 
 ## License
 
 MIT
-
