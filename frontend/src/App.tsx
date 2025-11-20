@@ -50,10 +50,17 @@ function App() {
 
     try {
       // Access internal player to get the video element
-      const internalPlayer = playerRef.current.getInternalPlayer() as HTMLVideoElement
+      let internalPlayer: HTMLVideoElement | null = null
       
-      if (!internalPlayer) {
-         throw new Error("Could not access video player")
+      // Try different methods to get the internal player
+      if (typeof playerRef.current.getInternalPlayer === 'function') {
+        internalPlayer = playerRef.current.getInternalPlayer() as HTMLVideoElement
+      } else if (playerRef.current.player && playerRef.current.player.player) {
+        internalPlayer = playerRef.current.player.player as HTMLVideoElement
+      }
+      
+      if (!internalPlayer || !internalPlayer.videoWidth) {
+         throw new Error("Video not ready. Please wait for the video to load and try again.")
       }
 
       // 1. Create Canvas & Draw Frame
@@ -98,22 +105,37 @@ function App() {
 
   // Method 2: Capture from URL (Backend downloads & extracts)
   const handleCaptureFromUrl = async () => {
-    if (!url || !playerRef.current) return
+    if (!url) return
     
     setProcessing(true)
     setError(null)
     
-    const currentTime = playerRef.current.getCurrentTime()
+    let currentTime = 0
+    
+    // Try to get current time from player, fallback to 0
+    try {
+      if (playerRef.current && typeof playerRef.current.getCurrentTime === 'function') {
+        currentTime = playerRef.current.getCurrentTime() || 0
+      }
+    } catch (e) {
+      console.warn("Could not get current time from player, using 0", e)
+    }
     
     try {
       const res = await axios.post('/api/generate-from-url', {
         url: url,
         timestamp: currentTime
+      }, {
+        timeout: 60000 // 60 second timeout
       })
       setResult(res.data)
     } catch (err: any) {
       console.error(err)
-      setError(err.response?.data?.detail || "Processing failed")
+      if (err.code === 'ECONNABORTED') {
+        setError("Request timed out. The video might be too long or unavailable.")
+      } else {
+        setError(err.response?.data?.detail || "Processing failed")
+      }
     } finally {
       setProcessing(false)
     }
@@ -130,11 +152,17 @@ function App() {
     try {
       const res = await axios.post('/api/analyze-movie', {
         query: movieQuery
+      }, {
+        timeout: 90000 // 90 second timeout for movie analysis (multiple frames)
       })
       setResult(res.data)
     } catch (err: any) {
       console.error(err)
-      setError(err.response?.data?.detail || "Analysis failed")
+      if (err.code === 'ECONNABORTED') {
+        setError("Request timed out. Try a different movie or check your connection.")
+      } else {
+        setError(err.response?.data?.detail || "Analysis failed")
+      }
     } finally {
       setProcessing(false)
     }

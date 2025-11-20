@@ -72,11 +72,12 @@ def extract_frame_from_url(url: str, timestamp: float = 0) -> np.ndarray:
     """
     # 1. Get direct stream URL (if not already a direct link)
     # If it's a youtube link, resolve it. If it's a direct stream, use it.
-    if "youtube.com" in url or "youtu.be" in url:
+    if "youtube.com" in url or "youtu.be" in url or "vimeo.com" in url:
         ydl_opts = {
-            'format': 'best[ext=mp4]',
+            'format': 'best[ext=mp4]/best',
             'quiet': True,
             'no_warnings': True,
+            'socket_timeout': 30,
             'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
             'extractor_args': {
                 'youtube': {
@@ -91,9 +92,12 @@ def extract_frame_from_url(url: str, timestamp: float = 0) -> np.ndarray:
                 'Sec-Fetch-Mode': 'navigate',
             }
         }
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=False)
-            video_url = info['url']
+        try:
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(url, download=False)
+                video_url = info['url']
+        except Exception as e:
+            raise RuntimeError(f"Failed to extract video URL: {str(e)}")
     else:
         video_url = url
         
@@ -103,7 +107,7 @@ def extract_frame_from_url(url: str, timestamp: float = 0) -> np.ndarray:
             ffmpeg
             .input(video_url, ss=timestamp)
             .output('pipe:', vframes=1, format='image2', vcodec='png')
-            .run(capture_stdout=True, capture_stderr=True)
+            .run(capture_stdout=True, capture_stderr=True, timeout=30)
         )
         
         image = Image.open(io.BytesIO(out))
@@ -111,6 +115,8 @@ def extract_frame_from_url(url: str, timestamp: float = 0) -> np.ndarray:
         
     except ffmpeg.Error as e:
         raise RuntimeError(f"ffmpeg error: {e.stderr.decode('utf8')}")
+    except Exception as e:
+        raise RuntimeError(f"Frame extraction failed: {str(e)}")
 
 def extract_multiple_frames_from_url(url: str, num_samples: int = 5) -> list[np.ndarray]:
     """
