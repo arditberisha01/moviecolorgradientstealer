@@ -107,7 +107,7 @@ def extract_frame_from_url(url: str, timestamp: float = 0) -> np.ndarray:
             ffmpeg
             .input(video_url, ss=timestamp)
             .output('pipe:', vframes=1, format='image2', vcodec='png')
-            .run(capture_stdout=True, capture_stderr=True, timeout=30)
+            .run(capture_stdout=True, capture_stderr=True)
         )
         
         image = Image.open(io.BytesIO(out))

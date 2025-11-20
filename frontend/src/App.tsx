@@ -19,6 +19,8 @@ function App() {
   const [processing, setProcessing] = useState(false)
   const [result, setResult] = useState<{ lut_url: string, frame_url: string } | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [videoReady, setVideoReady] = useState(false)
+  const [videoLoading, setVideoLoading] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   
   const playerRef = useRef<any>(null)
@@ -31,6 +33,8 @@ function App() {
       setFileUrl(URL.createObjectURL(selectedFile))
       setError(null)
       setResult(null)
+      setVideoReady(false)
+      setVideoLoading(true)
     }
   }
 
@@ -43,7 +47,7 @@ function App() {
 
   // Method 1: Capture from Local File (via ReactPlayer's internal video element)
   const handleCaptureFromFile = async () => {
-    if (!file || !playerRef.current) return
+    if (!file || !playerRef.current || !videoReady) return
     
     setProcessing(true)
     setError(null)
@@ -255,22 +259,41 @@ function App() {
                           width="100%"
                           height="100%"
                           className="absolute top-0 left-0"
+                          onReady={() => {
+                            setVideoReady(true)
+                            setVideoLoading(false)
+                          }}
+                          onError={() => {
+                            setError("Failed to load video")
+                            setVideoLoading(false)
+                          }}
                         />
+                        {videoLoading && (
+                          <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/80 z-10">
+                            <Loader2 className="w-12 h-12 text-indigo-400 animate-spin mb-4" />
+                            <p className="text-slate-300 text-sm">Loading video...</p>
+                          </div>
+                        )}
                      </div>
                      <div className="flex items-center justify-between">
                         <button 
-                          onClick={() => { setFile(null); setFileUrl(null); }}
+                          onClick={() => { 
+                            setFile(null); 
+                            setFileUrl(null); 
+                            setVideoReady(false);
+                            setVideoLoading(false);
+                          }}
                           className="text-sm text-slate-400 hover:text-white underline"
                         >
                           Change File
                         </button>
                         <button
                           onClick={handleCaptureFromFile}
-                          disabled={processing}
-                          className="px-6 py-3 bg-indigo-600 hover:bg-indigo-500 rounded-xl font-semibold flex items-center gap-2 disabled:opacity-50"
+                          disabled={processing || !videoReady}
+                          className="px-6 py-3 bg-indigo-600 hover:bg-indigo-500 rounded-xl font-semibold flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                           {processing ? <Loader2 className="w-4 h-4 animate-spin"/> : <Scissors className="w-4 h-4"/>}
-                          Steal Grade from Frame
+                          {videoReady ? 'Steal Grade from Frame' : 'Waiting for video...'}
                         </button>
                      </div>
                   </div>

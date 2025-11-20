@@ -29,6 +29,17 @@ class MovieRequest(BaseModel):
 
 @router.post("/upload")
 async def upload_video(file: UploadFile = File(...)):
+    # Check file size
+    file.file.seek(0, 2)  # Seek to end
+    file_size = file.file.tell()
+    file.file.seek(0)  # Reset to beginning
+    
+    if file_size > MAX_FILE_SIZE:
+        raise HTTPException(
+            status_code=413, 
+            detail=f"File too large. Maximum size is {MAX_FILE_SIZE // (1024*1024)}MB"
+        )
+    
     file_id = str(uuid.uuid4())
     file_ext = file.filename.split('.')[-1]
     video_filename = f"{file_id}.{file_ext}"
