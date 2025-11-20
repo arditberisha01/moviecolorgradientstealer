@@ -1,0 +1,10 @@
+fastapi
+uvicorn
+python-multipart
+numpy
+pillow
+opencv-python-headless
+scikit-image
+scipy
+yt-dlp
+ffmpeg-python
