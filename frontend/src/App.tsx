@@ -21,7 +21,7 @@ function App() {
   const [error, setError] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   
-  const playerRef = useRef<ReactPlayer>(null)
+  const playerRef = useRef<any>(null)
 
   // Handle File Selection
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
