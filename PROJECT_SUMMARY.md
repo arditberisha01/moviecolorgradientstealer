@@ -44,7 +44,7 @@
 - Drag & drop or click to upload video files
 - Real-time video preview with ReactPlayer
 - Pause at any frame and extract color grade
-- Captures frame from browser, sends to backend for LUT generation
+- **Optimized Performance**: Uploads process locally first, skipping heavy video upload to cloud
 
 ### 2. **Paste URL (YouTube/Vimeo)**
 - Paste any YouTube or Vimeo link
@@ -56,6 +56,7 @@
 - Enter a movie name (e.g., "Dune", "Blade Runner 2049")
 - Platform searches YouTube for official trailer
 - Extracts **5 random frames** from different timestamps
+- **Smart Filtering**: Automatically rejects dark, blurry, or low-quality frames
 - Aggregates color statistics for comprehensive LUT
 - More accurate representation of the movie's overall look
 
@@ -139,10 +140,11 @@
 - Process:
   1. Searches YouTube for "{query} official trailer 4k"
   2. Extracts 5 random frames (10%-90% of video duration)
-  3. Calculates aggregated color statistics
-  4. Generates comprehensive LUT
-  5. Uploads to Supabase
-  6. Returns public URLs
+  3. **Smart Filtering**: Analyzes brightness/variance to reject bad frames
+  4. Calculates aggregated color statistics
+  5. Generates comprehensive LUT
+  6. Uploads to Supabase
+  7. Returns public URLs
 
 #### 4. `GET /api/download/generated/{filename}`
 - Serves generated files (LUTs and frames)
@@ -556,6 +558,8 @@ docker compose down
 11. ReactPlayer error fixes
 12. URL processing timeout fixes
 13. FFmpeg timeout parameter fix
+14. **Optimized Uploads**: Skip Supabase video upload for faster processing
+15. **Smart Filtering**: Automatically reject dark/blurry frames for better LUTs
 
 ---
 
@@ -626,6 +630,7 @@ docker compose down
 - ✅ Modern, responsive UI
 - ✅ Error handling & timeouts
 - ✅ YouTube bot bypass
+- ✅ Optimized Upload Performance
+- ✅ Smart Frame Filtering
 
 **Ready for production use!** 🚀
-

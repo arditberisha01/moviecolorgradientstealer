@@ -16,7 +16,6 @@ def get_ydl_opts(base_opts=None):
     """
     Returns standard yt-dlp options with bot bypass and cookie support.
     """
-    # Strategy: Use iOS client as primary
     opts = {
         'quiet': True,
         'no_warnings': True,
@@ -35,11 +34,9 @@ def get_ydl_opts(base_opts=None):
         }
     }
     
-    # Check for cookies file (useful for local dev or if mounted)
     if os.path.exists('cookies.txt'):
         opts['cookiefile'] = 'cookies.txt'
     elif os.getenv('YOUTUBE_COOKIES_CONTENT'):
-        # If passed as env var, write to temp file
         try:
             with open('cookies_temp.txt', 'w') as f:
                 f.write(os.getenv('YOUTUBE_COOKIES_CONTENT'))
@@ -51,6 +48,32 @@ def get_ydl_opts(base_opts=None):
         opts.update(base_opts)
     return opts
 
+def is_frame_useful(frame_np):
+    """
+    Determines if a frame is good for color analysis.
+    Rejects dark frames, solid colors, or extremely low contrast images.
+    """
+    if frame_np is None or frame_np.size == 0:
+        return False
+        
+    # Convert to grayscale for analysis
+    gray = cv2.cvtColor(frame_np, cv2.COLOR_RGB2GRAY)
+    
+    # 1. Check Brightness
+    mean_brightness = np.mean(gray)
+    if mean_brightness < 25: # Too dark (fade to black)
+        return False
+    if mean_brightness > 245: # Too bright (fade to white)
+        return False
+        
+    # 2. Check Contrast / Variance
+    # A solid color screen (like a logo or black screen) has very low variance
+    variance = np.var(gray)
+    if variance < 200: # Threshold found via experimentation for "flat" images
+        return False
+        
+    return True
+
 def search_movies(query: str) -> list[dict]:
     """
     Searches YouTube for the query and returns a list of results.
@@ -58,22 +81,17 @@ def search_movies(query: str) -> list[dict]:
     search_query = f"{query} official trailer 4k"
     ydl_opts = get_ydl_opts({
         'format': 'best[ext=mp4]/best',
-        'default_search': 'ytsearch5:', # Search for top 5 results
-        'extract_flat': True, # Don't download, just get metadata
+        'default_search': 'ytsearch5:',
+        'extract_flat': True,
     })
 
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(search_query, download=False)
-            
             results = []
             if 'entries' in info:
                 for entry in info['entries']:
-                    # Some entries might be None or playlists, skip them
-                    if not entry: 
-                        continue
-                        
-                    # Handle flat extraction data structure
+                    if not entry: continue
                     results.append({
                         'title': entry.get('title', 'Unknown Title'),
                         'url': entry.get('url', ''),
@@ -82,24 +100,20 @@ def search_movies(query: str) -> list[dict]:
                         'view_count': entry.get('view_count', 0)
                     })
             
-            if not results:
-                # Fallback: if no entries found (sometimes yt-dlp structure varies)
-                if 'url' in info:
-                     results.append({
-                        'title': info.get('title', 'Unknown Title'),
-                        'url': info.get('url', ''),
-                        'thumbnail': info.get('thumbnail', None),
-                         'duration': info.get('duration', 0),
-                        'view_count': info.get('view_count', 0)
-                    })
+            if not results and 'url' in info:
+                 results.append({
+                    'title': info.get('title', 'Unknown Title'),
+                    'url': info.get('url', ''),
+                    'thumbnail': info.get('thumbnail', None),
+                     'duration': info.get('duration', 0),
+                    'view_count': info.get('view_count', 0)
+                })
             
             if not results:
                 raise ValueError("No video results found")
-                
             return results
 
     except Exception as e:
-        # Fallback strategy (Android client) if iOS fails
         logger.warning(f"iOS search failed: {e}. Retrying with Android...")
         ydl_opts['extractor_args']['youtube']['player_client'] = ['android']
         ydl_opts['http_headers']['User-Agent'] = 'com.google.android.youtube/17.36.4 (Linux; U; Android 12; GB) gzip'
@@ -144,17 +158,13 @@ def extract_frame_from_video(video_path: str, timestamp: float = None) -> np.nda
     return frame_rgb
 
 def extract_frame_from_url(url: str, timestamp: float = 0) -> np.ndarray:
-    # If youtube/vimeo, extract real URL
     if "youtube.com" in url or "youtu.be" in url or "vimeo.com" in url:
         ydl_opts = get_ydl_opts({'format': 'best[ext=mp4]/best'})
-        
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(url, download=False)
                 video_url = info['url']
-        except Exception as e:
-            # Retry with Android
-            logger.warning(f"iOS extract failed: {e}. Retrying with Android...")
+        except Exception:
             ydl_opts['extractor_args']['youtube']['player_client'] = ['android']
             ydl_opts['http_headers']['User-Agent'] = 'com.google.android.youtube/17.36.4 (Linux; U; Android 12; GB) gzip'
             try:
@@ -166,7 +176,6 @@ def extract_frame_from_url(url: str, timestamp: float = 0) -> np.ndarray:
     else:
         video_url = url
         
-    # ffmpeg extraction
     try:
         out, _ = (
             ffmpeg
@@ -181,7 +190,10 @@ def extract_frame_from_url(url: str, timestamp: float = 0) -> np.ndarray:
     except Exception as e:
         raise RuntimeError(f"Frame extraction failed: {str(e)}")
 
-def extract_multiple_frames_from_url(url: str, num_samples: int = 5) -> list[np.ndarray]:
+def extract_multiple_frames_from_url(url: str, target_samples: int = 5) -> list[np.ndarray]:
+    """
+    Extracts frames, filters out bad ones (dark/blurry), and returns the best target_samples.
+    """
     ydl_opts = get_ydl_opts({'format': 'best[ext=mp4]/best'})
     
     try:
@@ -189,9 +201,7 @@ def extract_multiple_frames_from_url(url: str, num_samples: int = 5) -> list[np.
             info = ydl.extract_info(url, download=False)
             video_url = info['url']
             duration = info.get('duration', 60)
-    except Exception as e:
-        # Retry with Android
-        logger.warning(f"iOS multi-extract failed: {e}. Retrying with Android...")
+    except Exception:
         ydl_opts['extractor_args']['youtube']['player_client'] = ['android']
         ydl_opts['http_headers']['User-Agent'] = 'com.google.android.youtube/17.36.4 (Linux; U; Android 12; GB) gzip'
         try:
@@ -202,24 +212,36 @@ def extract_multiple_frames_from_url(url: str, num_samples: int = 5) -> list[np.
         except Exception as e2:
              raise RuntimeError(f"Failed to extract video URL: {str(e2)}")
 
-    frames = []
-    # Avoid the very beginning and very end
-    if duration < 5: duration = 5 # Minimum duration safety
-    timestamps = sorted([random.uniform(duration * 0.15, duration * 0.85) for _ in range(num_samples)])
+    valid_frames = []
+    attempts = 0
+    max_attempts = target_samples * 4 # Try 4x as many timestamps as needed
+    
+    if duration < 5: duration = 5
+    
+    # Generate more timestamps than needed to allow for filtering
+    timestamps = sorted([random.uniform(duration * 0.1, duration * 0.9) for _ in range(max_attempts)])
     
     for ts in timestamps:
         try:
             frame = extract_frame_from_url(video_url, ts)
-            frames.append(frame)
+            if is_frame_useful(frame):
+                valid_frames.append(frame)
+                logger.info(f"✅ Accepted frame at {ts}s")
+            else:
+                logger.info(f"❌ Rejected frame at {ts}s (dark/blurry)")
+                
+            if len(valid_frames) >= target_samples:
+                break
         except Exception as e:
             logger.warning(f"Failed to extract frame at {ts}: {e}")
-            
-    if not frames:
-        raise ValueError("Could not extract any frames from the video")
-        
-    return frames
 
-# --- Color Science Functions (Unchanged) ---
+    if not valid_frames:
+        # If strict filtering rejected everything, try relaxed filtering or just take whatever we got
+        raise ValueError("Could not extract any useful frames (video might be too dark)")
+        
+    return valid_frames[:target_samples]
+
+# --- Color Science Functions ---
 def get_lab_stats(image_np):
     if image_np.shape[2] == 4: image_np = cv2.cvtColor(image_np, cv2.COLOR_RGBA2RGB)
     img_lab = cv2.cvtColor(image_np.astype(np.uint8), cv2.COLOR_RGB2LAB).astype(np.float32)
@@ -309,7 +331,7 @@ def process_movie_selection_to_lut(video_url, output_lut_path, output_frame_path
     """
     Processes a specific selected movie trailer URL.
     """
-    frames = extract_multiple_frames_from_url(video_url, num_samples=5)
+    frames = extract_multiple_frames_from_url(video_url, target_samples=5)
     avg_mean, avg_std = get_aggregated_lab_stats(frames)
     identity = generate_identity_lut(33)
     transformed_lut = apply_color_transfer(identity, avg_mean, avg_std)

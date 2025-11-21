@@ -51,12 +51,9 @@ async def upload_video(file: UploadFile = File(...)):
     with open(video_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
     
-    # Optionally upload to Supabase
-    if storage_manager.is_enabled():
-        try:
-            await storage_manager.upload_file(video_path, f"uploads/{video_filename}", cleanup_after=True)
-        except Exception as e:
-            print(f"Supabase upload failed (continuing with local): {e}")
+    # OPTIMIZATION: Skip uploading the raw video to Supabase.
+    # We only need it locally to extract the frame. 
+    # This saves bandwidth and makes the process much faster.
         
     return {"file_id": file_id, "filename": video_filename}
 
@@ -69,7 +66,7 @@ async def generate_lut(file_id: str, timestamp: float = Body(None, embed=True)):
             break
             
     if not video_path:
-        raise HTTPException(status_code=404, detail="Video not found")
+        raise HTTPException(status_code=404, detail="Video not found (might have expired)")
         
     lut_filename = f"{file_id}.cube"
     frame_filename = f"{file_id}.jpg"
@@ -79,16 +76,22 @@ async def generate_lut(file_id: str, timestamp: float = Body(None, embed=True)):
     try:
         process_video_to_lut(video_path, lut_path, frame_path, timestamp)
         
-        # Upload results to Supabase
+        # Upload ONLY results to Supabase
         lut_url = f"/api/download/generated/{lut_filename}"
         frame_url = f"/api/download/generated/{frame_filename}"
 
         if storage_manager.is_enabled():
-            # Don't cleanup here to preserve upload
-            l_url = await storage_manager.upload_file(lut_path, f"generated/{lut_filename}", cleanup_after=False)
+            l_url = await storage_manager.upload_file(lut_path, f"generated/{lut_filename}", cleanup_after=True)
             f_url = await storage_manager.upload_file(frame_path, f"generated/{frame_filename}", cleanup_after=False)
             if l_url: lut_url = l_url
             if f_url: frame_url = f_url
+            
+        # Clean up local video file to save space
+        try:
+            if os.path.exists(video_path):
+                os.remove(video_path)
+        except Exception as e:
+            print(f"Failed to cleanup local video: {e}")
             
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -122,7 +125,7 @@ async def generate_from_image(file: UploadFile = File(...)):
         frame_url = f"/api/download/generated/{frame_filename}"
 
         if storage_manager.is_enabled():
-            l_url = await storage_manager.upload_file(lut_path, f"generated/{lut_filename}")
+            l_url = await storage_manager.upload_file(lut_path, f"generated/{lut_filename}", cleanup_after=True)
             f_url = await storage_manager.upload_file(frame_path, f"generated/{frame_filename}", cleanup_after=False)
             if l_url: lut_url = l_url
             if f_url: frame_url = f_url
@@ -159,7 +162,7 @@ async def generate_from_url(request: UrlRequest):
         frame_url = f"/api/download/generated/{frame_filename}"
 
         if storage_manager.is_enabled():
-            l_url = await storage_manager.upload_file(lut_path, f"generated/{lut_filename}")
+            l_url = await storage_manager.upload_file(lut_path, f"generated/{lut_filename}", cleanup_after=True)
             f_url = await storage_manager.upload_file(frame_path, f"generated/{frame_filename}", cleanup_after=False)
             if l_url: lut_url = l_url
             if f_url: frame_url = f_url
@@ -208,7 +211,7 @@ async def analyze_movie_selection(request: MovieSelectionRequest):
         frame_url = f"/api/download/generated/{frame_filename}"
 
         if storage_manager.is_enabled():
-            l_url = await storage_manager.upload_file(lut_path, f"generated/{lut_filename}")
+            l_url = await storage_manager.upload_file(lut_path, f"generated/{lut_filename}", cleanup_after=True)
             f_url = await storage_manager.upload_file(frame_path, f"generated/{frame_filename}", cleanup_after=False)
             if l_url: lut_url = l_url
             if f_url: frame_url = f_url
