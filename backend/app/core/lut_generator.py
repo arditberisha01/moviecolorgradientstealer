@@ -156,21 +156,6 @@ def search_movies(query: str) -> list[dict]:
         ydl_opts['http_headers']['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
         
         try:
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(search_query, download=False)
-                results = []
-                entries = info.get('entries', [])
-                for entry in entries:
-                    if not entry: continue
-                    url = entry.get('webpage_url') or entry.get('url') or ""
-                    if url and not url.startswith('ytsearch'):
-                        results.append({
-                            'title': entry.get('title', 'Unknown Title'),
-                            'url': url,
-                            'thumbnail': entry.get('thumbnail', None),
-                            'duration': entry.get('duration', 0),
-                            'view_count': entry.get('view_count', 0)
-                        })
                 if not results:
                     raise ValueError("No results found on non-flat fallback.")
                 return results

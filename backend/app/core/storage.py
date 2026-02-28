@@ -18,12 +18,14 @@ class StorageManager:
         if supabase_url and supabase_key:
             try:
                 self.supabase = create_client(supabase_url, supabase_key)
+                self._bucket_verified = False
                 # Ensure bucket exists
                 self._ensure_bucket_exists()
                 print(f"✅ Supabase Storage initialized (bucket: {self.bucket_name})")
             except Exception as e:
                 print(f"⚠️  Supabase Storage initialization failed: {e}")
                 self.supabase = None
+                self._bucket_verified = False
         else:
             print("ℹ️  Supabase credentials not found. Using local storage only.")
     
@@ -35,16 +37,19 @@ class StorageManager:
         try:
             # Try to get bucket info
             self.supabase.storage.get_bucket(self.bucket_name)
-        except Exception:
-            # Bucket doesn't exist, create it
+            self._bucket_verified = True
+        except Exception as e:
+            # Bucket doesn't exist or other error, try to create it
             try:
                 self.supabase.storage.create_bucket(
                     self.bucket_name,
                     options={"public": True}
                 )
                 print(f"✅ Created Supabase bucket: {self.bucket_name}")
-            except Exception as e:
-                print(f"⚠️  Could not create bucket: {e}")
+                self._bucket_verified = True
+            except Exception as e2:
+                print(f"⚠️  Could not create bucket: {e2}")
+                self._bucket_verified = False
     
     def is_enabled(self) -> bool:
         """Check if Supabase storage is enabled."""
@@ -78,6 +83,10 @@ class StorageManager:
         """
         if not self.supabase:
             return None
+            
+        # Try to verify bucket again if it wasn't verified initially
+        if not getattr(self, '_bucket_verified', False):
+            self._ensure_bucket_exists()
             
         try:
             # Cleanup old files BEFORE uploading to ensure space
@@ -149,9 +158,13 @@ class StorageManager:
                 'lut_path': lut_url, # Storing full URL for simplicity now
                 'frame_path': frame_url
             }
-            self.supabase.table('analysis_cache').insert(data).execute()
+            # Use raw query or wrapped call to avoid crashing if table missing
+            self.supabase.table('analysis_cache').upsert(data, on_conflict='cache_key').execute()
         except Exception as e:
-            print(f"Cache save error: {e}")
+            if "PGRST205" in str(e) or "not find" in str(e).lower():
+                print(f"ℹ️  Caching table not found - results will still be returned but not cached.")
+            else:
+                print(f"⚠️  Cache save error: {e}")
 
 # Singleton instance
 storage_manager = StorageManager()
