@@ -12,6 +12,9 @@ function cn(...inputs: (string | undefined | null | false)[]) {
   return twMerge(clsx(inputs))
 }
 
+// Production API Configuration
+axios.defaults.baseURL = 'https://color-stealer-backend.onrender.com'
+
 function App() {
   const [mode, setMode] = useState<'upload' | 'url' | 'movie'>('upload')
   const [file, setFile] = useState<File | null>(null)

@@ -22,7 +22,7 @@ def get_ydl_opts(base_opts=None):
         'socket_timeout': 30,
         'extractor_args': {
             'youtube': {
-                'player_client': ['android', 'ios', 'tv'],
+                'player_client': ['android', 'ios', 'tv', 'web'],
                 'player_skip': ['webpage', 'configs'],
                 'skip': ['hls', 'dash', 'translated_subs']
             }
@@ -219,11 +219,23 @@ def extract_frame_from_url(url: str, timestamp: float = 0) -> np.ndarray:
                 raise RuntimeError(f"Failed to extract video URL: {str(e2)}")
     else:
         video_url = url
+    
+    # Get headers from yt-dlp to pass to ffmpeg
+    headers = ""
+    if any(domain in video_url for domain in ["youtube.com", "youtu.be", "googlevideo.com", "v.redd.it"]):
+        ydl_opts = get_ydl_opts()
+        user_agent = ydl_opts['http_headers']['User-Agent']
+        headers = f"User-Agent: {user_agent}\r\n"
         
     try:
+        # Pass headers to ffmpeg to avoid 403 Forbidden
+        input_args = {}
+        if headers:
+            input_args['headers'] = headers
+
         out, _ = (
             ffmpeg
-            .input(video_url, ss=timestamp)
+            .input(video_url, ss=timestamp, **input_args)
             .output('pipe:', vframes=1, format='image2', vcodec='png')
             .run(capture_stdout=True, capture_stderr=True)
         )
