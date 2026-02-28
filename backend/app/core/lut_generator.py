@@ -22,15 +22,16 @@ def get_ydl_opts(base_opts=None):
         'socket_timeout': 30,
         'extractor_args': {
             'youtube': {
-                'player_client': ['ios', 'android', 'mweb'],
+                'player_client': ['android', 'ios'],
+                'player_skip': ['webpage', 'configs'],
                 'skip': ['hls', 'dash', 'translated_subs']
             }
         },
         'http_headers': {
-            'User-Agent': 'com.google.ios.youtube/19.09.3 (iPhone14,3; U; CPU iOS 15_6 like Mac OS X)',
-            'Accept': '*/*',
+            'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
             'Accept-Language': 'en-US,en;q=0.9',
-            'Accept-Encoding': 'gzip, deflate',
+            'Connection': 'keep-alive',
         }
     }
     
@@ -117,8 +118,8 @@ def search_movies(query: str) -> list[dict]:
                 for entry in entries:
                     if not entry: continue
                     url = entry.get('url') or entry.get('webpage_url') or ""
-                    # Skip if it's just the search query reflected
-                    if not url or url.startswith('ytsearch'):
+                    # Enhanced filtering for garbage results
+                    if not url or url.startswith('ytsearch') or entry.get('_type') == 'url':
                         continue
                         
                     results.append({
@@ -132,7 +133,7 @@ def search_movies(query: str) -> list[dict]:
             # If extract_info directly returns one video instead of a search list
             elif info.get('url') or info.get('webpage_url'):
                 url = info.get('url') or info.get('webpage_url') or ""
-                if url and not url.startswith('ytsearch'):
+                if url and not url.startswith('ytsearch') and info.get('_type') != 'url':
                     logger.info("Search returned a single video directly")
                     results.append({
                         'title': info.get('title', 'Unknown Title'),
