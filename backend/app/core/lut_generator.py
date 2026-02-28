@@ -82,7 +82,7 @@ def is_frame_useful(frame_np):
     # 2. Check Contrast / Variance
     # A solid color screen (like a logo or black screen) has very low variance
     variance = np.var(gray)
-    if variance < 200: # Threshold found via experimentation for "flat" images
+    if variance < 50: # Relaxed from 200 to allow more frames (especially for dark trailers)
         return False
         
     return True
@@ -196,24 +196,36 @@ def extract_frame_from_url(url: str, timestamp: float = 0) -> np.ndarray:
     else:
         video_url = url
     
-    # Get headers from yt-dlp to pass to ffmpeg
-    headers = ""
-    if any(domain in video_url for domain in ["youtube.com", "youtu.be", "googlevideo.com", "v.redd.it"]):
-        ydl_opts = get_ydl_opts()
-        user_agent = ydl_opts['http_headers']['User-Agent']
-        headers = f"User-Agent: {user_agent}\r\n"
+    # Get headers and proxy from yt-dlp to pass to ffmpeg
+    ydl_opts = get_ydl_opts()
+    user_agent = ydl_opts['http_headers'].get('User-Agent')
+    proxy = ydl_opts.get('proxy')
+    
+    input_args = {}
+    
+    # Critical: Pass full headers for YouTube consistency
+    ffmpeg_headers = [f"User-Agent: {user_agent}"]
+    if "youtube.com" in video_url or "googlevideo.com" in video_url:
+        ffmpeg_headers.append("Referer: https://www.youtube.com/")
+        # If cookies are available in environment, pass them? 
+        # Actually, yt-dlp's url is usually signed enough, but UA MUST match.
         
-    try:
-        # Pass headers to ffmpeg to avoid 403 Forbidden
-        input_args = {}
-        if headers:
-            input_args['headers'] = headers
+    input_args['headers'] = "\r\n".join(ffmpeg_headers) + "\r\n"
+    
+    # If a proxy is being used by yt-dlp, ffmpeg MUST use it too
+    # because the video_url is likely IP-bound to the proxy
+    env = os.environ.copy()
+    if proxy:
+        logger.info(f"Passing proxy to ffmpeg: {proxy}")
+        env['http_proxy'] = proxy
+        env['https_proxy'] = proxy
 
+    try:
         out, _ = (
             ffmpeg
             .input(video_url, ss=timestamp, **input_args)
             .output('pipe:', vframes=1, format='image2', vcodec='png')
-            .run(capture_stdout=True, capture_stderr=True)
+            .run(capture_stdout=True, capture_stderr=True, env=env)
         )
         image = Image.open(io.BytesIO(out))
         return np.array(image)
@@ -268,8 +280,13 @@ def extract_multiple_frames_from_url(url: str, target_samples: int = 5) -> list[
             logger.warning(f"Failed to extract frame at {ts}: {e}")
 
     if not valid_frames:
-        # If strict filtering rejected everything, try relaxed filtering or just take whatever we got
-        raise ValueError("Could not extract any useful frames (video might be too dark)")
+        # If strict filtering rejected everything, try to just take ANY frame
+        logger.warning(f"Strict filtering failed for '{url}'. Attempting to extract ANY first valid frame...")
+        try:
+            frame = extract_frame_from_url(video_url, duration / 2)
+            return [frame]
+        except Exception as e:
+            raise ValueError(f"Could not extract any frames from video: {str(e)}")
         
     return valid_frames[:target_samples]
 
