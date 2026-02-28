@@ -96,6 +96,11 @@ def search_movies(query: str) -> list[dict]:
         'default_search': 'ytsearch5:',
         'extract_flat': True,
     })
+    
+    # Critical fix: player_client often breaks basic ytsearch. 
+    # Use default web clients for search.
+    if 'extractor_args' in ydl_opts and 'youtube' in ydl_opts['extractor_args']:
+        ydl_opts['extractor_args']['youtube'].pop('player_client', None)
 
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -112,23 +117,14 @@ def search_movies(query: str) -> list[dict]:
                         'view_count': entry.get('view_count', 0)
                     })
             
-            if not results and 'url' in info:
-                 results.append({
-                    'title': info.get('title', 'Unknown Title'),
-                    'url': info.get('url', ''),
-                    'thumbnail': info.get('thumbnail', None),
-                     'duration': info.get('duration', 0),
-                    'view_count': info.get('view_count', 0)
-                })
-            
             if not results:
-                raise ValueError("No video results found")
+                raise ValueError("No video results found via search API. Check if IP is blocked.")
             return results
 
     except Exception as e:
-        logger.warning(f"iOS search failed: {e}. Retrying with Android...")
-        ydl_opts['extractor_args']['youtube']['player_client'] = ['android']
-        ydl_opts['http_headers']['User-Agent'] = 'com.google.android.youtube/17.36.4 (Linux; U; Android 12; GB) gzip'
+        logger.warning(f"Search failed: {e}. Attempting fallback with generic client...")
+        ydl_opts['extractor_args']['youtube'] = {} # Reset
+        ydl_opts['http_headers']['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
         
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -144,9 +140,11 @@ def search_movies(query: str) -> list[dict]:
                                 'duration': entry.get('duration', 0),
                                 'view_count': entry.get('view_count', 0)
                             })
+                if not results:
+                    raise ValueError("No results found on fallback.")
                 return results
         except Exception as e2:
-            raise RuntimeError(f"Search failed: {str(e2)}")
+            raise RuntimeError(f"Search failed completely: {str(e2)}")
 
 def extract_frame_from_video(video_path: str, timestamp: float = None) -> np.ndarray:
     cap = cv2.VideoCapture(video_path)
