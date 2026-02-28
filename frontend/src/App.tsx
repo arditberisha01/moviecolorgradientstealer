@@ -1,6 +1,8 @@
 import { useState, useRef, useEffect } from 'react'
 import axios from 'axios'
-import ReactPlayer from 'react-player'
+import _ReactPlayer from 'react-player'
+const ReactPlayer = _ReactPlayer as any
+
 import { Upload, FileVideo, Download, Loader2, Image as ImageIcon, Link as LinkIcon, Film, Scissors, Search, Play } from 'lucide-react'
 import { clsx } from 'clsx'
 import { twMerge } from 'tailwind-merge'
