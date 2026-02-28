@@ -34,6 +34,18 @@ def get_ydl_opts(base_opts=None):
         }
     }
     
+    # Add proxy support from environment (useful for Render deployment with rotating proxies)
+    proxy_ip = os.getenv('proxy-ip') or os.getenv('PROXY_IP')
+    proxy_username = os.getenv('username') or os.getenv('PROXY_USERNAME')
+    proxy_password = os.getenv('password') or os.getenv('PROXY_PASSWORD')
+    proxy_port = os.getenv('http-port') or os.getenv('PROXY_PORT')
+    
+    if proxy_ip and proxy_port:
+        if proxy_username and proxy_password:
+            opts['proxy'] = f"http://{proxy_username}:{proxy_password}@{proxy_ip}:{proxy_port}"
+        else:
+            opts['proxy'] = f"http://{proxy_ip}:{proxy_port}"
+    
     if os.path.exists('cookies.txt'):
         opts['cookiefile'] = 'cookies.txt'
     elif os.getenv('YOUTUBE_COOKIES_CONTENT'):
