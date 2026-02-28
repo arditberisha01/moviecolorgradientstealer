@@ -1,7 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import axios from 'axios'
 import ReactPlayer from 'react-player'
-import type { ReactPlayer as ReactPlayerType } from 'react-player'
 import { Upload, FileVideo, Download, Loader2, Image as ImageIcon, Link as LinkIcon, Film, Scissors, Search, Play } from 'lucide-react'
 import { clsx } from 'clsx'
 import { twMerge } from 'tailwind-merge'
@@ -24,7 +23,7 @@ function App() {
   const [videoReady, setVideoReady] = useState(false)
   const [videoLoading, setVideoLoading] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
-  
+
   const playerRef = useRef<any>(null)
 
   // Reset state when changing modes
@@ -58,7 +57,7 @@ function App() {
   // Method 1: Capture from Local File
   const handleCaptureFromFile = async () => {
     if (!file || !playerRef.current || !videoReady) return
-    
+
     setProcessing(true)
     setError(null)
 
@@ -69,9 +68,9 @@ function App() {
       } else if (playerRef.current.player && playerRef.current.player.player) {
         internalPlayer = playerRef.current.player.player as HTMLVideoElement
       }
-      
+
       if (!internalPlayer || !internalPlayer.videoWidth) {
-         throw new Error("Video not ready. Please wait for the video to load and try again.")
+        throw new Error("Video not ready. Please wait for the video to load and try again.")
       }
 
       const canvas = document.createElement('canvas')
@@ -79,19 +78,19 @@ function App() {
       canvas.height = internalPlayer.videoHeight
       const ctx = canvas.getContext('2d')
       if (!ctx) throw new Error("Could not create canvas context")
-      
+
       ctx.drawImage(internalPlayer, 0, 0, canvas.width, canvas.height)
-      
+
       canvas.toBlob(async (blob) => {
         if (!blob) {
           setError("Could not capture frame")
           setProcessing(false)
           return
         }
-        
+
         const formData = new FormData()
         formData.append('file', blob, 'captured_frame.jpg')
-        
+
         try {
           const res = await axios.post('/api/generate-from-image', formData, {
             headers: { 'Content-Type': 'multipart/form-data' }
@@ -114,10 +113,10 @@ function App() {
   // Method 2: Capture from URL
   const handleCaptureFromUrl = async () => {
     if (!url) return
-    
+
     setProcessing(true)
     setError(null)
-    
+
     let currentTime = 0
     try {
       if (playerRef.current && typeof playerRef.current.getCurrentTime === 'function') {
@@ -126,7 +125,7 @@ function App() {
     } catch (e) {
       console.warn("Could not get current time from player, using 0", e)
     }
-    
+
     try {
       const res = await axios.post('/api/generate-from-url', {
         url: url,
@@ -150,12 +149,12 @@ function App() {
   // Method 3a: Search Movie
   const handleMovieSearch = async () => {
     if (!movieQuery) return
-    
+
     setProcessing(true)
     setError(null)
     setResult(null)
     setSearchResults(null)
-    
+
     try {
       const res = await axios.post('/api/search-movie', {
         query: movieQuery
@@ -176,32 +175,32 @@ function App() {
     setProcessing(true)
     setError(null)
     setSearchResults(null) // Hide results while processing
-    
+
     try {
-        const res = await axios.post('/api/analyze-movie-selection', {
-            url: videoUrl
-        }, {
-            timeout: 90000
-        })
-        setResult(res.data)
+      const res = await axios.post('/api/analyze-movie-selection', {
+        url: videoUrl
+      }, {
+        timeout: 90000
+      })
+      setResult(res.data)
     } catch (err: any) {
-        console.error(err)
-        if (err.code === 'ECONNABORTED') {
-            setError("Request timed out. Try again or choose a shorter video.")
-        } else {
-            setError(err.response?.data?.detail || "Analysis failed")
-        }
-        // Show results again if failed so user can try another
-        // setSearchResults(...) // Would need to persist results state
+      console.error(err)
+      if (err.code === 'ECONNABORTED') {
+        setError("Request timed out. Try again or choose a shorter video.")
+      } else {
+        setError(err.response?.data?.detail || "Analysis failed")
+      }
+      // Show results again if failed so user can try another
+      // setSearchResults(...) // Would need to persist results state
     } finally {
-        setProcessing(false)
+      setProcessing(false)
     }
   }
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 font-sans p-8">
       <div className="max-w-5xl mx-auto">
-        
+
         {/* Header */}
         <div className="text-center mb-12 space-y-4">
           <h1 className="text-5xl font-bold bg-gradient-to-r from-indigo-400 to-cyan-400 bg-clip-text text-transparent">
@@ -214,13 +213,13 @@ function App() {
 
         {/* Main Grid */}
         <div className="grid gap-8 lg:grid-cols-3">
-          
+
           {/* Left Column: Input & Player (Spans 2 cols) */}
           <div className="lg:col-span-2 space-y-6">
-            
+
             {/* Tabs */}
             <div className="flex p-1 bg-slate-900 rounded-xl border border-slate-800 w-fit">
-              <button 
+              <button
                 onClick={() => setMode('upload')}
                 className={cn(
                   "px-6 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2",
@@ -229,7 +228,7 @@ function App() {
               >
                 <Upload className="w-4 h-4" /> Upload File
               </button>
-              <button 
+              <button
                 onClick={() => setMode('url')}
                 className={cn(
                   "px-6 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2",
@@ -238,7 +237,7 @@ function App() {
               >
                 <LinkIcon className="w-4 h-4" /> Paste URL
               </button>
-              <button 
+              <button
                 onClick={() => setMode('movie')}
                 className={cn(
                   "px-6 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2",
@@ -251,19 +250,19 @@ function App() {
 
             {/* Input Area */}
             <div className="bg-slate-900/50 rounded-2xl p-6 border border-slate-800 min-h-[400px] flex flex-col">
-              
+
               {mode === 'upload' ? (
                 // UPLOAD MODE
                 !file || !fileUrl ? (
-                  <div 
+                  <div
                     className="flex-1 border-2 border-dashed border-slate-700 rounded-xl flex flex-col items-center justify-center gap-4 hover:bg-slate-900 hover:border-indigo-500/50 transition-colors cursor-pointer"
                     onClick={() => fileInputRef.current?.click()}
                   >
-                    <input 
-                      type="file" 
-                      ref={fileInputRef} 
-                      className="hidden" 
-                      accept="video/*" 
+                    <input
+                      type="file"
+                      ref={fileInputRef}
+                      className="hidden"
+                      accept="video/*"
                       onChange={handleFileChange}
                     />
                     <div className="p-4 bg-slate-800 rounded-full">
@@ -276,94 +275,96 @@ function App() {
                   </div>
                 ) : (
                   <div className="flex-1 flex flex-col gap-4">
-                     <div className="relative bg-black rounded-xl overflow-hidden flex-1 flex items-center justify-center aspect-video">
-                        <ReactPlayer
-                          ref={playerRef}
-                          url={fileUrl}
-                          controls
-                          width="100%"
-                          height="100%"
-                          className="absolute top-0 left-0"
-                          onReady={() => {
-                            setVideoReady(true)
-                            setVideoLoading(false)
-                          }}
-                          onError={() => {
-                            setError("Failed to load video")
-                            setVideoLoading(false)
-                          }}
-                        />
-                        {videoLoading && (
-                          <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/80 z-10">
-                            <Loader2 className="w-12 h-12 text-indigo-400 animate-spin mb-4" />
-                            <p className="text-slate-300 text-sm">Loading video...</p>
-                          </div>
-                        )}
-                     </div>
-                     <div className="flex items-center justify-between">
-                        <button 
-                          onClick={() => { 
-                            setFile(null); 
-                            setFileUrl(null); 
-                            setVideoReady(false);
-                            setVideoLoading(false);
-                          }}
-                          className="text-sm text-slate-400 hover:text-white underline"
-                        >
-                          Change File
-                        </button>
-                        <button
-                          onClick={handleCaptureFromFile}
-                          disabled={processing || !videoReady}
-                          className="px-6 py-3 bg-indigo-600 hover:bg-indigo-500 rounded-xl font-semibold flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                          {processing ? <Loader2 className="w-4 h-4 animate-spin"/> : <Scissors className="w-4 h-4"/>}
-                          {videoReady ? 'Steal Grade from Frame' : 'Waiting for video...'}
-                        </button>
-                     </div>
+                    <div className="relative bg-black rounded-xl overflow-hidden flex-1 flex items-center justify-center aspect-video">
+                      {/* @ts-ignore */}
+                      <ReactPlayer
+                        ref={playerRef}
+                        url={fileUrl}
+                        controls
+                        width="100%"
+                        height="100%"
+                        className="absolute top-0 left-0"
+                        onReady={() => {
+                          setVideoReady(true)
+                          setVideoLoading(false)
+                        }}
+                        onError={() => {
+                          setError("Failed to load video")
+                          setVideoLoading(false)
+                        }}
+                      />
+                      {videoLoading && (
+                        <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/80 z-10">
+                          <Loader2 className="w-12 h-12 text-indigo-400 animate-spin mb-4" />
+                          <p className="text-slate-300 text-sm">Loading video...</p>
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <button
+                        onClick={() => {
+                          setFile(null);
+                          setFileUrl(null);
+                          setVideoReady(false);
+                          setVideoLoading(false);
+                        }}
+                        className="text-sm text-slate-400 hover:text-white underline"
+                      >
+                        Change File
+                      </button>
+                      <button
+                        onClick={handleCaptureFromFile}
+                        disabled={processing || !videoReady}
+                        className="px-6 py-3 bg-indigo-600 hover:bg-indigo-500 rounded-xl font-semibold flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {processing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Scissors className="w-4 h-4" />}
+                        {videoReady ? 'Steal Grade from Frame' : 'Waiting for video...'}
+                      </button>
+                    </div>
                   </div>
                 )
               ) : mode === 'url' ? (
                 // URL MODE
                 <div className="flex-1 flex flex-col gap-4">
                   <div className="flex gap-2">
-                    <input 
-                      type="text" 
-                      placeholder="Paste YouTube or Vimeo link..." 
+                    <input
+                      type="text"
+                      placeholder="Paste YouTube or Vimeo link..."
                       value={url}
                       onChange={(e) => setUrl(e.target.value)}
                       className="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 focus:outline-none focus:border-indigo-500"
                     />
                   </div>
-                  
+
                   {url ? (
-                     <div className="relative bg-black rounded-xl overflow-hidden flex-1 flex items-center justify-center aspect-video">
-                        <ReactPlayer 
-                          ref={playerRef}
-                          url={url}
-                          controls
-                          width="100%"
-                          height="100%"
-                          className="absolute top-0 left-0"
-                        />
-                     </div>
+                    <div className="relative bg-black rounded-xl overflow-hidden flex-1 flex items-center justify-center aspect-video">
+                      {/* @ts-ignore */}
+                      <ReactPlayer
+                        ref={playerRef}
+                        url={url}
+                        controls
+                        width="100%"
+                        height="100%"
+                        className="absolute top-0 left-0"
+                      />
+                    </div>
                   ) : (
                     <div className="flex-1 flex flex-col items-center justify-center text-slate-600">
                       <YoutubeIcon className="w-16 h-16 mb-4 opacity-20" />
                       <p>Enter a URL to load video</p>
                     </div>
                   )}
-                  
+
                   {url && (
                     <div className="flex justify-end">
                       <button
-                          onClick={handleCaptureFromUrl}
-                          disabled={processing}
-                          className="px-6 py-3 bg-indigo-600 hover:bg-indigo-500 rounded-xl font-semibold flex items-center gap-2 disabled:opacity-50"
-                        >
-                          {processing ? <Loader2 className="w-4 h-4 animate-spin"/> : <Scissors className="w-4 h-4"/>}
-                          Steal Grade from Current Time
-                        </button>
+                        onClick={handleCaptureFromUrl}
+                        disabled={processing}
+                        className="px-6 py-3 bg-indigo-600 hover:bg-indigo-500 rounded-xl font-semibold flex items-center gap-2 disabled:opacity-50"
+                      >
+                        {processing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Scissors className="w-4 h-4" />}
+                        Steal Grade from Current Time
+                      </button>
                     </div>
                   )}
                 </div>
@@ -371,77 +372,77 @@ function App() {
                 // MOVIE SEARCH MODE
                 <div className="flex-1 flex flex-col gap-4">
                   {!searchResults ? (
-                      <div className="flex flex-col items-center justify-center flex-1 text-center space-y-6">
-                        <Film className="w-16 h-16 text-indigo-500 opacity-50" />
-                        <h2 className="text-2xl font-semibold">Analyze a Movie Look</h2>
-                        <p className="text-slate-400 max-w-md">
-                          Enter a movie name (e.g., "Dune", "The Matrix"). We'll find the trailer, sample multiple frames, and generate a high-quality LUT.
-                        </p>
-                        
-                        <div className="flex w-full max-w-md gap-2">
-                          <input 
-                            type="text" 
-                            placeholder="Movie title..." 
-                            value={movieQuery}
-                            onChange={(e) => setMovieQuery(e.target.value)}
-                            className="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 focus:outline-none focus:border-indigo-500"
-                            onKeyDown={(e) => e.key === 'Enter' && handleMovieSearch()}
-                          />
-                          <button 
-                            onClick={handleMovieSearch}
-                            disabled={!movieQuery || processing}
-                            className="px-6 py-3 bg-indigo-600 hover:bg-indigo-500 rounded-xl font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
-                          >
-                            {processing ? <Loader2 className="w-5 h-5 animate-spin" /> : <Search className="w-5 h-5" />}
-                          </button>
-                        </div>
+                    <div className="flex flex-col items-center justify-center flex-1 text-center space-y-6">
+                      <Film className="w-16 h-16 text-indigo-500 opacity-50" />
+                      <h2 className="text-2xl font-semibold">Analyze a Movie Look</h2>
+                      <p className="text-slate-400 max-w-md">
+                        Enter a movie name (e.g., "Dune", "The Matrix"). We'll find the trailer, sample multiple frames, and generate a high-quality LUT.
+                      </p>
+
+                      <div className="flex w-full max-w-md gap-2">
+                        <input
+                          type="text"
+                          placeholder="Movie title..."
+                          value={movieQuery}
+                          onChange={(e) => setMovieQuery(e.target.value)}
+                          className="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 focus:outline-none focus:border-indigo-500"
+                          onKeyDown={(e) => e.key === 'Enter' && handleMovieSearch()}
+                        />
+                        <button
+                          onClick={handleMovieSearch}
+                          disabled={!movieQuery || processing}
+                          className="px-6 py-3 bg-indigo-600 hover:bg-indigo-500 rounded-xl font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          {processing ? <Loader2 className="w-5 h-5 animate-spin" /> : <Search className="w-5 h-5" />}
+                        </button>
                       </div>
+                    </div>
                   ) : (
-                      <div className="flex-1 overflow-y-auto max-h-[600px]">
-                          <div className="flex items-center justify-between mb-4">
-                              <h3 className="text-lg font-semibold">Select a Video</h3>
-                              <button 
-                                onClick={() => setSearchResults(null)}
-                                className="text-sm text-slate-400 hover:text-white"
-                              >
-                                Back to Search
-                              </button>
-                          </div>
-                          <div className="grid grid-cols-1 gap-4">
-                              {searchResults.map((video, i) => (
-                                  <div 
-                                    key={i}
-                                    onClick={() => handleSelectMovie(video.url)}
-                                    className="flex gap-4 p-3 bg-slate-800/50 rounded-xl hover:bg-slate-800 border border-slate-700/50 hover:border-indigo-500 transition-all cursor-pointer group"
-                                  >
-                                      <div className="w-40 aspect-video bg-black rounded-lg overflow-hidden relative flex-shrink-0">
-                                          {video.thumbnail ? (
-                                              <img src={video.thumbnail} alt={video.title} className="w-full h-full object-cover" />
-                                          ) : (
-                                              <div className="w-full h-full flex items-center justify-center bg-slate-900">
-                                                  <Film className="w-8 h-8 text-slate-700" />
-                                              </div>
-                                          )}
-                                          <div className="absolute inset-0 bg-black/40 group-hover:bg-black/20 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                                              <Play className="w-8 h-8 text-white fill-current" />
-                                          </div>
-                                      </div>
-                                      <div className="flex-1 py-2">
-                                          <h4 className="font-semibold text-lg line-clamp-2 group-hover:text-indigo-400 transition-colors">
-                                              {video.title}
-                                          </h4>
-                                          <p className="text-slate-400 text-sm mt-1">
-                                              {video.duration ? `${Math.floor(video.duration / 60)}:${String(video.duration % 60).padStart(2, '0')}` : 'Unknown duration'}
-                                          </p>
-                                      </div>
-                                  </div>
-                              ))}
-                          </div>
+                    <div className="flex-1 overflow-y-auto max-h-[600px]">
+                      <div className="flex items-center justify-between mb-4">
+                        <h3 className="text-lg font-semibold">Select a Video</h3>
+                        <button
+                          onClick={() => setSearchResults(null)}
+                          className="text-sm text-slate-400 hover:text-white"
+                        >
+                          Back to Search
+                        </button>
                       </div>
+                      <div className="grid grid-cols-1 gap-4">
+                        {searchResults.map((video, i) => (
+                          <div
+                            key={i}
+                            onClick={() => handleSelectMovie(video.url)}
+                            className="flex gap-4 p-3 bg-slate-800/50 rounded-xl hover:bg-slate-800 border border-slate-700/50 hover:border-indigo-500 transition-all cursor-pointer group"
+                          >
+                            <div className="w-40 aspect-video bg-black rounded-lg overflow-hidden relative flex-shrink-0">
+                              {video.thumbnail ? (
+                                <img src={video.thumbnail} alt={video.title} className="w-full h-full object-cover" />
+                              ) : (
+                                <div className="w-full h-full flex items-center justify-center bg-slate-900">
+                                  <Film className="w-8 h-8 text-slate-700" />
+                                </div>
+                              )}
+                              <div className="absolute inset-0 bg-black/40 group-hover:bg-black/20 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                <Play className="w-8 h-8 text-white fill-current" />
+                              </div>
+                            </div>
+                            <div className="flex-1 py-2">
+                              <h4 className="font-semibold text-lg line-clamp-2 group-hover:text-indigo-400 transition-colors">
+                                {video.title}
+                              </h4>
+                              <p className="text-slate-400 text-sm mt-1">
+                                {video.duration ? `${Math.floor(video.duration / 60)}:${String(video.duration % 60).padStart(2, '0')}` : 'Unknown duration'}
+                              </p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
                   )}
                 </div>
               )}
-              
+
               {error && (
                 <div className="mt-4 p-3 bg-red-500/10 border border-red-500/20 text-red-400 rounded-lg text-sm text-center">
                   {error}
@@ -454,22 +455,22 @@ function App() {
           {/* Right Column: Result */}
           <div className="space-y-6">
             <div className="bg-slate-900/50 border border-slate-800 rounded-2xl p-6 h-full">
-               <h3 className="text-lg font-semibold mb-6 flex items-center gap-2 text-slate-300">
-                  <ImageIcon className="w-5 h-5 text-cyan-400" />
-                  Extracted Grade
-                </h3>
+              <h3 className="text-lg font-semibold mb-6 flex items-center gap-2 text-slate-300">
+                <ImageIcon className="w-5 h-5 text-cyan-400" />
+                Extracted Grade
+              </h3>
 
               {result ? (
                 <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
                   <div className="aspect-video bg-black rounded-lg overflow-hidden relative group border border-slate-700 shadow-2xl">
-                    <img 
-                      src={result.frame_url} 
-                      alt="Analyzed frame" 
-                      className="w-full h-full object-contain" 
+                    <img
+                      src={result.frame_url}
+                      alt="Analyzed frame"
+                      className="w-full h-full object-contain"
                     />
                   </div>
 
-                  <a 
+                  <a
                     href={result.lut_url}
                     download
                     className="block w-full py-4 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-center font-semibold text-lg transition-colors flex items-center justify-center gap-2 shadow-lg shadow-cyan-900/20"
@@ -477,7 +478,7 @@ function App() {
                     <Download className="w-5 h-5" />
                     Download .CUBE
                   </a>
-                  
+
                   <div className="p-4 bg-slate-950 rounded-xl text-xs text-slate-500">
                     <p>Import this .cube file into Premiere Pro (Lumetri Color), DaVinci Resolve, or Final Cut Pro to apply the look.</p>
                   </div>
@@ -485,7 +486,7 @@ function App() {
               ) : (
                 <div className="h-[300px] flex flex-col items-center justify-center p-8 text-slate-600 border-2 border-dashed border-slate-800/50 rounded-xl">
                   <div className="w-16 h-16 rounded-full bg-slate-900 flex items-center justify-center mb-4">
-                     <Download className="w-8 h-8 opacity-20" />
+                    <Download className="w-8 h-8 opacity-20" />
                   </div>
                   <p className="text-center">Select a frame or search a movie to generate your LUT.</p>
                 </div>
@@ -500,12 +501,12 @@ function App() {
 }
 
 function YoutubeIcon(props: any) {
-    return (
-        <svg {...props} viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M2.5 17a24.12 24.12 0 0 1 0-10 2 2 0 0 1 1.4-1.4 49.56 49.56 0 0 1 16.2 0A2 2 0 0 1 21.5 7a24.12 24.12 0 0 1 0 10 2 2 0 0 1-1.4 1.4 49.55 49.55 0 0 1-16.2 0A2 2 0 0 1 2.5 17" />
-            <path d="m10 15 5-3-5-3z" />
-        </svg>
-    )
+  return (
+    <svg {...props} viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M2.5 17a24.12 24.12 0 0 1 0-10 2 2 0 0 1 1.4-1.4 49.56 49.56 0 0 1 16.2 0A2 2 0 0 1 21.5 7a24.12 24.12 0 0 1 0 10 2 2 0 0 1-1.4 1.4 49.55 49.55 0 0 1-16.2 0A2 2 0 0 1 2.5 17" />
+      <path d="m10 15 5-3-5-3z" />
+    </svg>
+  )
 }
 
 export default App
