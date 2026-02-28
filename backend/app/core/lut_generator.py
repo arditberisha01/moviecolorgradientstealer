@@ -102,23 +102,48 @@ def search_movies(query: str) -> list[dict]:
     if 'extractor_args' in ydl_opts and 'youtube' in ydl_opts['extractor_args']:
         ydl_opts['extractor_args']['youtube'].pop('player_client', None)
 
+    proxy_str = ydl_opts.get('proxy', 'No Proxy')
+    logger.info(f"🔎 Starting search for: '{search_query}' using proxy: {proxy_str}")
+
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(search_query, download=False)
             results = []
+            
+            # Handle list of results
             if 'entries' in info:
-                for entry in info['entries']:
+                entries = info['entries']
+                logger.info(f"Found {len(entries)} potential entries")
+                for entry in entries:
                     if not entry: continue
                     results.append({
                         'title': entry.get('title', 'Unknown Title'),
-                        'url': entry.get('url', ''),
+                        'url': entry.get('url') or entry.get('webpage_url') or "",
                         'thumbnail': entry.get('thumbnail', None),
                         'duration': entry.get('duration', 0),
                         'view_count': entry.get('view_count', 0)
                     })
             
+            # If extract_info directly returns one video instead of a search list
+            elif info.get('url') or info.get('webpage_url'):
+                logger.info("Search returned a single video directly")
+                results.append({
+                    'title': info.get('title', 'Unknown Title'),
+                    'url': info.get('url') or info.get('webpage_url') or "",
+                    'thumbnail': info.get('thumbnail', None),
+                    'duration': info.get('duration', 0),
+                    'view_count': info.get('view_count', 0)
+                })
+
+            # Filter out entries that didn't extract a URL correctly (raw search strings)
+            # Sometimes yt-dlp returns the search query as the 'url' if it fails to parse
+            results = [r for r in results if r['url'] and not r['url'].startswith('ytsearch')]
+            
             if not results:
-                raise ValueError("No video results found via search API. Check if IP is blocked.")
+                logger.warning(f"No results found for '{search_query}'. ydl_info keys: {list(info.keys())}")
+                raise ValueError("No video results found via search API. Check if IP is blocked or proxy is failing.")
+            
+            logger.info(f"✅ Successfully extracted {len(results)} valid results")
             return results
 
     except Exception as e:
@@ -135,16 +160,20 @@ def search_movies(query: str) -> list[dict]:
                         if entry:
                             results.append({
                                 'title': entry.get('title', 'Unknown Title'),
-                                'url': entry.get('url', ''),
+                                'url': entry.get('url') or entry.get('webpage_url') or "",
                                 'thumbnail': entry.get('thumbnail', None),
                                 'duration': entry.get('duration', 0),
                                 'view_count': entry.get('view_count', 0)
                             })
+                
+                # Filter as above
+                results = [r for r in results if r['url'] and not r['url'].startswith('ytsearch')]
+                
                 if not results:
                     raise ValueError("No results found on fallback.")
                 return results
         except Exception as e2:
-            raise RuntimeError(f"Search failed completely: {str(e2)}")
+            raise RuntimeError(f"Search failed completely. Primary error: {str(e)}, Fallback error: {str(e2)}")
 
 def extract_frame_from_video(video_path: str, timestamp: float = None) -> np.ndarray:
     cap = cv2.VideoCapture(video_path)
