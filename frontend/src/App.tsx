@@ -12,8 +12,18 @@ function cn(...inputs: (string | undefined | null | false)[]) {
   return twMerge(clsx(inputs))
 }
 
-// Production API Configuration
-axios.defaults.baseURL = 'https://color-stealer-backend.onrender.com'
+const MAX_FILE_SIZE_BYTES = 1_000_000_000 // 1GB
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000').replace(/\/$/, '')
+axios.defaults.baseURL = API_BASE_URL
+
+function isValidWebUrl(value: string): boolean {
+  try {
+    const parsed = new URL(value)
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:'
+  } catch {
+    return false
+  }
+}
 
 function App() {
   const [mode, setMode] = useState<'upload' | 'url' | 'movie'>('upload')
@@ -27,9 +37,11 @@ function App() {
   const [error, setError] = useState<string | null>(null)
   const [videoReady, setVideoReady] = useState(false)
   const [videoLoading, setVideoLoading] = useState(false)
+  const [dragActive, setDragActive] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const playerRef = useRef<any>(null)
+  const isUrlReady = isValidWebUrl(url.trim())
 
   // Reset state when changing modes
   useEffect(() => {
@@ -39,17 +51,46 @@ function App() {
     setProcessing(false)
   }, [mode])
 
+  const resetSelectedFile = () => {
+    setFile(null)
+    setFileUrl(null)
+    setVideoReady(false)
+    setVideoLoading(false)
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ''
+    }
+  }
+
+  const setSelectedFile = (selectedFile: File | null) => {
+    if (!selectedFile) {
+      resetSelectedFile()
+      return
+    }
+
+    if (!selectedFile.type.startsWith('video/')) {
+      setError('Please select a valid video file.')
+      resetSelectedFile()
+      return
+    }
+
+    if (selectedFile.size > MAX_FILE_SIZE_BYTES) {
+      setError('File is too large. Maximum supported size is 1GB.')
+      resetSelectedFile()
+      return
+    }
+
+    setFile(selectedFile)
+    setFileUrl(URL.createObjectURL(selectedFile))
+    setError(null)
+    setResult(null)
+    setVideoReady(false)
+    setVideoLoading(true)
+  }
+
   // Handle File Selection
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      const selectedFile = e.target.files[0]
-      setFile(selectedFile)
-      setFileUrl(URL.createObjectURL(selectedFile))
-      setError(null)
-      setResult(null)
-      setVideoReady(false)
-      setVideoLoading(true)
-    }
+    if (!e.target.files || !e.target.files[0]) return
+    setSelectedFile(e.target.files[0])
   }
 
   // Cleanup object URL
@@ -117,7 +158,10 @@ function App() {
 
   // Method 2: Capture from URL
   const handleCaptureFromUrl = async () => {
-    if (!url) return
+    if (!isUrlReady) {
+      setError('Please enter a valid URL before starting analysis.')
+      return
+    }
 
     setProcessing(true)
     setError(null)
@@ -153,7 +197,7 @@ function App() {
 
   // Method 3a: Search Movie
   const handleMovieSearch = async () => {
-    if (!movieQuery) return
+    if (!movieQuery.trim()) return
 
     setProcessing(true)
     setError(null)
@@ -162,7 +206,7 @@ function App() {
 
     try {
       const res = await axios.post('/api/search-movie', {
-        query: movieQuery
+        query: movieQuery.trim()
       }, {
         timeout: 30000
       })
@@ -260,8 +304,27 @@ function App() {
                 // UPLOAD MODE
                 !file || !fileUrl ? (
                   <div
-                    className="flex-1 border-2 border-dashed border-slate-700 rounded-xl flex flex-col items-center justify-center gap-4 hover:bg-slate-900 hover:border-indigo-500/50 transition-colors cursor-pointer"
+                    className={cn(
+                      "flex-1 border-2 border-dashed border-slate-700 rounded-xl flex flex-col items-center justify-center gap-4 hover:bg-slate-900 hover:border-indigo-500/50 transition-colors cursor-pointer",
+                      dragActive && "border-indigo-400 bg-slate-900"
+                    )}
                     onClick={() => fileInputRef.current?.click()}
+                    onDragOver={(e) => {
+                      e.preventDefault()
+                      setDragActive(true)
+                    }}
+                    onDragLeave={(e) => {
+                      e.preventDefault()
+                      setDragActive(false)
+                    }}
+                    onDrop={(e) => {
+                      e.preventDefault()
+                      setDragActive(false)
+                      const droppedFile = e.dataTransfer.files?.[0]
+                      if (droppedFile) {
+                        setSelectedFile(droppedFile)
+                      }
+                    }}
                   >
                     <input
                       type="file"
@@ -275,8 +338,18 @@ function App() {
                     </div>
                     <div className="text-center">
                       <p className="text-lg font-medium">Drop video here</p>
-                      <p className="text-sm text-slate-500">or click to browse</p>
+                      <p className="text-sm text-slate-500">or click to browse (max 1GB)</p>
                     </div>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        fileInputRef.current?.click()
+                      }}
+                      className="px-4 py-2 rounded-lg border border-slate-600 text-sm hover:border-indigo-500 hover:text-white"
+                    >
+                      Choose Video
+                    </button>
                   </div>
                 ) : (
                   <div className="flex-1 flex flex-col gap-4">
@@ -307,12 +380,7 @@ function App() {
                     </div>
                     <div className="flex items-center justify-between">
                       <button
-                        onClick={() => {
-                          setFile(null);
-                          setFileUrl(null);
-                          setVideoReady(false);
-                          setVideoLoading(false);
-                        }}
+                        onClick={resetSelectedFile}
                         className="text-sm text-slate-400 hover:text-white underline"
                       >
                         Change File
@@ -323,7 +391,7 @@ function App() {
                         className="px-6 py-3 bg-indigo-600 hover:bg-indigo-500 rounded-xl font-semibold flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         {processing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Scissors className="w-4 h-4" />}
-                        {videoReady ? 'Steal Grade from Frame' : 'Waiting for video...'}
+                        {processing ? 'Processing...' : videoReady ? 'Steal Grade from Frame' : 'Waiting for video...'}
                       </button>
                     </div>
                   </div>
@@ -364,7 +432,7 @@ function App() {
                     <div className="flex justify-end">
                       <button
                         onClick={handleCaptureFromUrl}
-                        disabled={processing}
+                        disabled={processing || !isUrlReady}
                         className="px-6 py-3 bg-indigo-600 hover:bg-indigo-500 rounded-xl font-semibold flex items-center gap-2 disabled:opacity-50"
                       >
                         {processing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Scissors className="w-4 h-4" />}

@@ -8,8 +8,15 @@ export default defineConfig({
     workers: process.env.CI ? 1 : undefined,
     reporter: 'html',
     use: {
-        baseURL: 'https://color-stealer-frontend.onrender.com',
+        baseURL: process.env.PLAYWRIGHT_BASE_URL || 'http://127.0.0.1:5173',
         trace: 'on-first-retry',
+    },
+    webServer: process.env.PLAYWRIGHT_BASE_URL ? undefined : {
+        command: 'npm run dev -- --host 127.0.0.1 --port 5173',
+        cwd: '../frontend',
+        url: 'http://127.0.0.1:5173',
+        reuseExistingServer: true,
+        timeout: 120000,
     },
     projects: [
         {

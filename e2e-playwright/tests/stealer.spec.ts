@@ -1,43 +1,37 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from '@playwright/test'
 
-test.describe('Color Stealer E2E', () => {
-    test('should load the homepage', async ({ page }) => {
-        // Increase timeout for initial load
-        await page.goto('/', { timeout: 60000 });
-        await expect(page).toHaveTitle(/Color Grade Stealer/);
-        // Using locator('h1') as it's more robust than getByRole for transparent/gradient text
-        await expect(page.locator('h1')).toContainText('Color Stealer', { timeout: 15000 });
-    });
+test.describe('Color Stealer 2.0', () => {
+  test('loads homepage and key tabs', async ({ page }) => {
+    await page.goto('/')
+    await expect(page.locator('h1')).toContainText('Color Stealer')
+    await expect(page.getByRole('button', { name: /Upload File/i })).toBeVisible()
+    await expect(page.getByRole('button', { name: /Paste URL/i })).toBeVisible()
+    await expect(page.getByRole('button', { name: /Movie Search/i })).toBeVisible()
+  })
 
-    // Since actual extraction might take time/resources and YouTube might block us,
-    // we will test the UI logic and API calls but possibly mock or just do a simple search test.
-    test('Movie Search API should return results or graceful error', async ({ page }) => {
-        await page.goto('/', { timeout: 60000 });
+  test('upload flow updates UI when a video is selected', async ({ page }) => {
+    await page.goto('/')
 
-        // Switch to Movie Search tab
-        await page.getByRole('button', { name: 'Movie Search' }).click();
+    const fileInput = page.locator('input[type="file"]')
+    await fileInput.setInputFiles({
+      name: 'test-video.mp4',
+      mimeType: 'video/mp4',
+      buffer: Buffer.from('fake video payload'),
+    })
 
-        // Type query - Using the exact placeholder from App.tsx
-        const input = page.getByPlaceholder('Movie title...');
-        await input.fill('Dune');
+    await expect(page.getByRole('button', { name: /Change File/i })).toBeVisible()
+    await expect(page.getByRole('button', { name: /Waiting for video|Steal Grade from Frame/i })).toBeVisible()
+  })
 
-        // Click Search - Using flexible locator for the search button (magnifying glass)
-        // In App.tsx it's a button with a Search icon
-        await page.getByRole('button').filter({ hasText: 'Search for Trailer' }).or(page.getByRole('button').filter({ has: page.locator('svg, img') })).last().click();
+  test('url button is disabled until URL is valid', async ({ page }) => {
+    await page.goto('/')
+    await page.getByRole('button', { name: /Paste URL/i }).click()
 
-        // Wait for results or error - increase timeout
-        const resultsContainer = page.locator('.grid');
-        const errorToast = page.getByText(/Search failed|No video results|Failed to search/);
+    await page.getByPlaceholder(/Paste YouTube or Vimeo link/i).fill('not-a-url')
+    const analyzeBtn = page.getByRole('button', { name: /Steal Grade from Current Time/i })
+    await expect(analyzeBtn).toBeDisabled()
 
-        // We check if either the results appear or an error message shows up
-        await Promise.race([
-            resultsContainer.waitFor({ state: 'visible', timeout: 30000 }).then(() => 'results'),
-            errorToast.waitFor({ state: 'visible', timeout: 30000 }).then(() => 'error')
-        ]).catch(() => {
-            console.log('Timeout waiting for search results or error');
-        });
-
-        // Ensure the app is still responsive
-        await expect(page.locator('h1')).toBeVisible();
-    });
-});
+    await page.getByPlaceholder(/Paste YouTube or Vimeo link/i).fill('https://example.com/video')
+    await expect(analyzeBtn).toBeEnabled()
+  })
+})

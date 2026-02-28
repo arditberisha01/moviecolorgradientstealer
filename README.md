@@ -52,6 +52,12 @@ DATA_DIR=/data
 
 If Supabase credentials are not provided, the app will use local file storage.
 
+For frontend API target, create `frontend/.env` from `frontend/.env.example`:
+
+```env
+VITE_API_BASE_URL=http://localhost:8000
+```
+
 ## Deployment
 
 See [DEPLOYMENT.md](DEPLOYMENT.md) for detailed instructions on deploying to Render.
