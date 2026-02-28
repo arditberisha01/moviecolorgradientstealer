@@ -116,9 +116,14 @@ def search_movies(query: str) -> list[dict]:
                 logger.info(f"Found {len(entries)} potential entries")
                 for entry in entries:
                     if not entry: continue
+                    url = entry.get('url') or entry.get('webpage_url') or ""
+                    # Skip if it's just the search query reflected
+                    if not url or url.startswith('ytsearch'):
+                        continue
+                        
                     results.append({
                         'title': entry.get('title', 'Unknown Title'),
-                        'url': entry.get('url') or entry.get('webpage_url') or "",
+                        'url': url,
                         'thumbnail': entry.get('thumbnail', None),
                         'duration': entry.get('duration', 0),
                         'view_count': entry.get('view_count', 0)
@@ -126,54 +131,54 @@ def search_movies(query: str) -> list[dict]:
             
             # If extract_info directly returns one video instead of a search list
             elif info.get('url') or info.get('webpage_url'):
-                logger.info("Search returned a single video directly")
-                results.append({
-                    'title': info.get('title', 'Unknown Title'),
-                    'url': info.get('url') or info.get('webpage_url') or "",
-                    'thumbnail': info.get('thumbnail', None),
-                    'duration': info.get('duration', 0),
-                    'view_count': info.get('view_count', 0)
-                })
+                url = info.get('url') or info.get('webpage_url') or ""
+                if url and not url.startswith('ytsearch'):
+                    logger.info("Search returned a single video directly")
+                    results.append({
+                        'title': info.get('title', 'Unknown Title'),
+                        'url': url,
+                        'thumbnail': info.get('thumbnail', None),
+                        'duration': info.get('duration', 0),
+                        'view_count': info.get('view_count', 0)
+                    })
 
-            # Filter out entries that didn't extract a URL correctly (raw search strings)
-            # Sometimes yt-dlp returns the search query as the 'url' if it fails to parse
-            results = [r for r in results if r['url'] and not r['url'].startswith('ytsearch')]
-            
             if not results:
-                logger.warning(f"No results found for '{search_query}'. ydl_info keys: {list(info.keys())}")
+                logger.warning(f"No valid results found for '{search_query}'. info entries count: {len(info.get('entries', [])) if 'entries' in info else 'N/A'}")
                 raise ValueError("No video results found via search API. Check if IP is blocked or proxy is failing.")
             
             logger.info(f"✅ Successfully extracted {len(results)} valid results")
             return results
 
     except Exception as e:
-        logger.warning(f"Search failed: {e}. Attempting fallback with generic client...")
-        ydl_opts['extractor_args']['youtube'] = {} # Reset
+        logger.warning(f"Search failed: {e}. Attempting fallback with generic client and no extract_flat...")
+        # Fallback 1: Try without extract_flat to get full entries (slower but more robust)
+        ydl_opts['extract_flat'] = False
         ydl_opts['http_headers']['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
         
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(search_query, download=False)
                 results = []
-                if 'entries' in info:
-                    for entry in info['entries']:
-                        if entry:
-                            results.append({
-                                'title': entry.get('title', 'Unknown Title'),
-                                'url': entry.get('url') or entry.get('webpage_url') or "",
-                                'thumbnail': entry.get('thumbnail', None),
-                                'duration': entry.get('duration', 0),
-                                'view_count': entry.get('view_count', 0)
-                            })
-                
-                # Filter as above
-                results = [r for r in results if r['url'] and not r['url'].startswith('ytsearch')]
-                
+                entries = info.get('entries', [])
+                for entry in entries:
+                    if not entry: continue
+                    url = entry.get('webpage_url') or entry.get('url') or ""
+                    if url and not url.startswith('ytsearch'):
+                        results.append({
+                            'title': entry.get('title', 'Unknown Title'),
+                            'url': url,
+                            'thumbnail': entry.get('thumbnail', None),
+                            'duration': entry.get('duration', 0),
+                            'view_count': entry.get('view_count', 0)
+                        })
                 if not results:
-                    raise ValueError("No results found on fallback.")
+                    raise ValueError("No results found on non-flat fallback.")
                 return results
         except Exception as e2:
-            raise RuntimeError(f"Search failed completely. Primary error: {str(e)}, Fallback error: {str(e2)}")
+            logger.warning(f"Fallback 1 failed: {e2}. Trying basic URL search...")
+            # Fallback 2: If everything fails, return an informative error for the UI
+            raise RuntimeError(f"Video search is currently unavailable from this server's IP. Please try providing a direct YouTube URL instead. Details: {str(e)}")
+
 
 def extract_frame_from_video(video_path: str, timestamp: float = None) -> np.ndarray:
     cap = cv2.VideoCapture(video_path)
