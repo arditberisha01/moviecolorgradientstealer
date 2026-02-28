@@ -22,13 +22,13 @@ def get_ydl_opts(base_opts=None):
         'socket_timeout': 30,
         'extractor_args': {
             'youtube': {
-                'player_client': ['android', 'ios'],
+                'player_client': ['android', 'ios', 'tv'],
                 'player_skip': ['webpage', 'configs'],
                 'skip': ['hls', 'dash', 'translated_subs']
             }
         },
         'http_headers': {
-            'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
             'Accept-Language': 'en-US,en;q=0.9',
             'Connection': 'keep-alive',
@@ -98,10 +98,9 @@ def search_movies(query: str) -> list[dict]:
         'extract_flat': True,
     })
     
-    # Critical fix: player_client often breaks basic ytsearch. 
-    # Use default web clients for search.
+    # Keep player_client if it exists, it helps with bot bypass
     if 'extractor_args' in ydl_opts and 'youtube' in ydl_opts['extractor_args']:
-        ydl_opts['extractor_args']['youtube'].pop('player_client', None)
+        logger.info(f"Using player_client: {ydl_opts['extractor_args']['youtube'].get('player_client')}")
 
     proxy_str = ydl_opts.get('proxy', 'No Proxy')
     logger.info(f"🔎 Starting search for: '{search_query}' using proxy: {proxy_str}")
