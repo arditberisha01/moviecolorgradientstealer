@@ -98,29 +98,18 @@ def search_movies(query: str) -> list[dict]:
         'extract_flat': True,
     })
     
-    # Keep player_client if it exists, it helps with bot bypass
-    if 'extractor_args' in ydl_opts and 'youtube' in ydl_opts['extractor_args']:
-        logger.info(f"Using player_client: {ydl_opts['extractor_args']['youtube'].get('player_client')}")
-
-    proxy_str = ydl_opts.get('proxy', 'No Proxy')
-    logger.info(f"🔎 Starting search for: '{search_query}' using proxy: {proxy_str}")
-
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(search_query, download=False)
+            logger.info(f"🔎 Starting search for: '{search_query}' using proxy: {ydl_opts.get('proxy')}")
+            info = ydl.extract_info(f"ytsearch5:{search_query}", download=False)
             results = []
             
-            # Handle list of results
-            if 'entries' in info:
-                entries = info['entries']
-                logger.info(f"Found {len(entries)} potential entries")
-                for entry in entries:
+            if info and 'entries' in info:
+                for entry in info['entries']:
                     if not entry: continue
                     url = entry.get('url') or entry.get('webpage_url') or ""
-                    # Enhanced filtering for garbage results
-                    if not url or url.startswith('ytsearch') or entry.get('_type') == 'url':
-                        continue
-                        
+                    if not url or url.startswith('ytsearch'): continue
+                    
                     results.append({
                         'title': entry.get('title', 'Unknown Title'),
                         'url': url,
@@ -129,40 +118,42 @@ def search_movies(query: str) -> list[dict]:
                         'view_count': entry.get('view_count', 0)
                     })
             
-            # If extract_info directly returns one video instead of a search list
-            elif info.get('url') or info.get('webpage_url'):
-                url = info.get('url') or info.get('webpage_url') or ""
-                if url and not url.startswith('ytsearch') and info.get('_type') != 'url':
-                    logger.info("Search returned a single video directly")
-                    results.append({
-                        'title': info.get('title', 'Unknown Title'),
-                        'url': url,
-                        'thumbnail': info.get('thumbnail', None),
-                        'duration': info.get('duration', 0),
-                        'view_count': info.get('view_count', 0)
-                    })
-
-            if not results:
-                logger.warning(f"No valid results found for '{search_query}'. info entries count: {len(info.get('entries', [])) if 'entries' in info else 'N/A'}")
-                raise ValueError("No video results found via search API. Check if IP is blocked or proxy is failing.")
-            
-            logger.info(f"✅ Successfully extracted {len(results)} valid results")
-            return results
+            if results:
+                logger.info(f"✅ Successfully extracted {len(results)} valid results")
+                return results
 
     except Exception as e:
-        logger.warning(f"Search failed: {e}. Attempting fallback with generic client and no extract_flat...")
-        # Fallback 1: Try without extract_flat to get full entries (slower but more robust)
-        ydl_opts['extract_flat'] = False
-        ydl_opts['http_headers']['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-        
-        try:
-                if not results:
-                    raise ValueError("No results found on non-flat fallback.")
-                return results
-        except Exception as e2:
-            logger.warning(f"Fallback 1 failed: {e2}. Trying basic URL search...")
-            # Fallback 2: If everything fails, return an informative error for the UI
-            raise RuntimeError(f"Video search is currently unavailable from this server's IP. Please try providing a direct YouTube URL instead. Details: {str(e)}")
+        logger.warning(f"Initial search failed: {e}. Attempting fallback...")
+
+    # Fallback: Try with a more generic client and no extract_flat
+    try:
+        fallback_opts = {
+            'quiet': True,
+            'no_warnings': True,
+            'format': 'best',
+            'proxy': ydl_opts.get('proxy'),
+            'http_headers': ydl_opts.get('http_headers', {})
+        }
+        with yt_dlp.YoutubeDL(fallback_opts) as ydl:
+            logger.info(f"🔎 Fallback search for: '{search_query}'")
+            info = ydl.extract_info(f"ytsearch3:{search_query}", download=False)
+            results = []
+            if info and 'entries' in info:
+                for entry in info['entries']:
+                    if not entry: continue
+                    url = entry.get('url') or entry.get('webpage_url') or ""
+                    if url and not url.startswith('ytsearch'):
+                        results.append({
+                            'title': entry.get('title', 'Unknown Title'),
+                            'url': url,
+                            'thumbnail': entry.get('thumbnail', None),
+                            'duration': entry.get('duration', 0)
+                        })
+            if results: return results
+    except Exception as e2:
+        logger.warning(f"Fallback failed: {e2}")
+
+    raise RuntimeError(f"Video search is currently unavailable. Please try providing a direct YouTube URL instead.")
 
 
 def extract_frame_from_video(video_path: str, timestamp: float = None) -> np.ndarray:
