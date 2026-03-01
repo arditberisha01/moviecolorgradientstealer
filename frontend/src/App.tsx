@@ -3,7 +3,7 @@ import axios from 'axios'
 import _ReactPlayer from 'react-player'
 const ReactPlayer = _ReactPlayer as any
 
-import { Upload, FileVideo, Download, Loader2, Image as ImageIcon, Link as LinkIcon, Film, Scissors, Search, Play } from 'lucide-react'
+import { Upload, FileVideo, Download, Loader2, Image as ImageIcon, Link as LinkIcon, Film, Scissors, Search, Play, Globe } from 'lucide-react'
 import { clsx } from 'clsx'
 import { twMerge } from 'tailwind-merge'
 
@@ -42,6 +42,17 @@ function App() {
 
   const playerRef = useRef<any>(null)
   const isUrlReady = isValidWebUrl(url.trim())
+
+  // Check if URL is embeddable (YouTube/Vimeo) for ReactPlayer
+  const isEmbeddableUrl = (u: string) => {
+    return /youtube\.com|youtu\.be|vimeo\.com/.test(u)
+  }
+
+  // Supported platforms list
+  const supportedPlatforms = [
+    'YouTube', 'Instagram', 'TikTok', 'Twitter/X',
+    'Reddit', 'Vimeo', 'Pinterest', 'Tumblr'
+  ]
 
   // Reset state when changing modes
   useEffect(() => {
@@ -284,7 +295,7 @@ function App() {
                   mode === 'url' ? "bg-indigo-600 text-white shadow-lg" : "text-slate-400 hover:text-white"
                 )}
               >
-                <LinkIcon className="w-4 h-4" /> Paste URL
+                <LinkIcon className="w-4 h-4" /> Paste URL / Reel
               </button>
               <button
                 onClick={() => setMode('movie')}
@@ -402,29 +413,49 @@ function App() {
                   <div className="flex gap-2">
                     <input
                       type="text"
-                      placeholder="Paste YouTube or Vimeo link..."
+                      placeholder="Paste YouTube, Instagram, TikTok, Twitter link..."
                       value={url}
                       onChange={(e) => setUrl(e.target.value)}
                       className="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 focus:outline-none focus:border-indigo-500"
                     />
                   </div>
 
+                  {/* Supported platforms badges */}
+                  <div className="flex flex-wrap gap-2">
+                    {supportedPlatforms.map((platform) => (
+                      <span
+                        key={platform}
+                        className="px-2 py-1 text-xs bg-slate-800/60 text-slate-400 rounded-md border border-slate-700/50"
+                      >
+                        {platform}
+                      </span>
+                    ))}
+                  </div>
+
                   {url ? (
-                    <div className="relative bg-black rounded-xl overflow-hidden flex-1 flex items-center justify-center aspect-video">
-                      {/* @ts-ignore */}
-                      <ReactPlayer
-                        ref={playerRef}
-                        url={url}
-                        controls
-                        width="100%"
-                        height="100%"
-                        className="absolute top-0 left-0"
-                      />
-                    </div>
+                    isEmbeddableUrl(url) ? (
+                      <div className="relative bg-black rounded-xl overflow-hidden flex-1 flex items-center justify-center aspect-video">
+                        {/* @ts-ignore */}
+                        <ReactPlayer
+                          ref={playerRef}
+                          url={url}
+                          controls
+                          width="100%"
+                          height="100%"
+                          className="absolute top-0 left-0"
+                        />
+                      </div>
+                    ) : (
+                      <div className="flex-1 flex flex-col items-center justify-center aspect-video bg-slate-900/80 rounded-xl border border-slate-700/50">
+                        <Globe className="w-12 h-12 text-indigo-400 mb-4 opacity-60" />
+                        <p className="text-slate-300 font-medium">URL accepted</p>
+                        <p className="text-slate-500 text-sm mt-1">Preview not available — click below to analyze</p>
+                      </div>
+                    )
                   ) : (
                     <div className="flex-1 flex flex-col items-center justify-center text-slate-600">
-                      <YoutubeIcon className="w-16 h-16 mb-4 opacity-20" />
-                      <p>Enter a URL to load video</p>
+                      <Globe className="w-16 h-16 mb-4 opacity-20" />
+                      <p>Enter any video URL to analyze its color grade</p>
                     </div>
                   )}
 
@@ -436,7 +467,7 @@ function App() {
                         className="px-6 py-3 bg-indigo-600 hover:bg-indigo-500 rounded-xl font-semibold flex items-center gap-2 disabled:opacity-50"
                       >
                         {processing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Scissors className="w-4 h-4" />}
-                        Steal Grade from Current Time
+                        Steal Grade
                       </button>
                     </div>
                   )}
@@ -570,15 +601,6 @@ function App() {
         </div>
       </div>
     </div>
-  )
-}
-
-function YoutubeIcon(props: any) {
-  return (
-    <svg {...props} viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M2.5 17a24.12 24.12 0 0 1 0-10 2 2 0 0 1 1.4-1.4 49.56 49.56 0 0 1 16.2 0A2 2 0 0 1 21.5 7a24.12 24.12 0 0 1 0 10 2 2 0 0 1-1.4 1.4 49.55 49.55 0 0 1-16.2 0A2 2 0 0 1 2.5 17" />
-      <path d="m10 15 5-3-5-3z" />
-    </svg>
   )
 }
 

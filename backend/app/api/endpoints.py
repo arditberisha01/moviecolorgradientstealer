@@ -50,10 +50,6 @@ async def upload_video(file: UploadFile = File(...)):
     video_path = os.path.join(UPLOAD_DIR, video_filename)
     with open(video_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
-    
-    # OPTIMIZATION: Skip uploading the raw video to Supabase.
-    # We only need it locally to extract the frame. 
-    # This saves bandwidth and makes the process much faster.
         
     return {"file_id": file_id, "filename": video_filename}
 
@@ -156,7 +152,8 @@ async def generate_from_url(request: UrlRequest):
     frame_path = os.path.join(GENERATED_DIR, frame_filename)
     
     try:
-        process_url_to_lut(request.url, request.timestamp, lut_path, frame_path)
+        # Now async — uses Cobalt to download from any supported platform
+        await process_url_to_lut(request.url, request.timestamp, lut_path, frame_path)
         
         lut_url = f"/api/download/generated/{lut_filename}"
         frame_url = f"/api/download/generated/{frame_filename}"
@@ -181,7 +178,8 @@ async def generate_from_url(request: UrlRequest):
 @router.post("/search-movie")
 async def search_movie_endpoint(request: MovieSearchRequest):
     try:
-        results = search_movies(request.query)
+        # Now async — uses YouTube HTML scraping + oEmbed
+        results = await search_movies(request.query)
         return {"results": results}
     except Exception as e:
         print(f"Movie search error: {e}")
@@ -205,7 +203,8 @@ async def analyze_movie_selection(request: MovieSelectionRequest):
     frame_path = os.path.join(GENERATED_DIR, frame_filename)
     
     try:
-        process_movie_selection_to_lut(request.url, lut_path, frame_path)
+        # Now async — uses Cobalt to download, then multi-frame sampling
+        await process_movie_selection_to_lut(request.url, lut_path, frame_path)
         
         lut_url = f"/api/download/generated/{lut_filename}"
         frame_url = f"/api/download/generated/{frame_filename}"

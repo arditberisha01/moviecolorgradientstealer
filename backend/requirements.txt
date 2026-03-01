@@ -6,7 +6,7 @@ pillow
 opencv-python-headless
 scikit-image
 scipy
-yt-dlp
+httpx
 ffmpeg-python
 supabase
 python-dotenv

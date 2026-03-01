@@ -2,64 +2,17 @@ import numpy as np
 import cv2
 from PIL import Image
 import ffmpeg
-import yt_dlp
 import os
 import io
 import random
 import logging
 
+from app.core.cobalt_client import download_video, search_youtube, cleanup_download
+
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-def get_ydl_opts(base_opts=None):
-    """
-    Returns standard yt-dlp options with bot bypass and cookie support.
-    """
-    opts = {
-        'quiet': True,
-        'no_warnings': True,
-        'socket_timeout': 30,
-        'extractor_args': {
-            'youtube': {
-                'player_client': ['android', 'ios', 'tv', 'web'],
-                'player_skip': ['webpage', 'configs'],
-                'skip': ['hls', 'dash', 'translated_subs']
-            }
-        },
-        'http_headers': {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-            'Accept-Language': 'en-US,en;q=0.9',
-            'Connection': 'keep-alive',
-        }
-    }
-    
-    # Add proxy support from environment (useful for Render deployment with rotating proxies)
-    proxy_ip = os.getenv('proxy-ip') or os.getenv('PROXY_IP')
-    proxy_username = os.getenv('username') or os.getenv('PROXY_USERNAME')
-    proxy_password = os.getenv('password') or os.getenv('PROXY_PASSWORD')
-    proxy_port = os.getenv('http-port') or os.getenv('PROXY_PORT')
-    
-    if proxy_ip and proxy_port:
-        if proxy_username and proxy_password:
-            opts['proxy'] = f"http://{proxy_username}:{proxy_password}@{proxy_ip}:{proxy_port}"
-        else:
-            opts['proxy'] = f"http://{proxy_ip}:{proxy_port}"
-    
-    if os.path.exists('cookies.txt'):
-        opts['cookiefile'] = 'cookies.txt'
-    elif os.getenv('YOUTUBE_COOKIES_CONTENT'):
-        try:
-            with open('cookies_temp.txt', 'w') as f:
-                f.write(os.getenv('YOUTUBE_COOKIES_CONTENT'))
-            opts['cookiefile'] = 'cookies_temp.txt'
-        except Exception as e:
-            logger.warning(f"Failed to write cookies from env: {e}")
-
-    if base_opts:
-        opts.update(base_opts)
-    return opts
 
 def is_frame_useful(frame_np):
     """
@@ -74,89 +27,38 @@ def is_frame_useful(frame_np):
     
     # 1. Check Brightness
     mean_brightness = np.mean(gray)
-    if mean_brightness < 25: # Too dark (fade to black)
+    if mean_brightness < 25:  # Too dark (fade to black)
         return False
-    if mean_brightness > 245: # Too bright (fade to white)
+    if mean_brightness > 245:  # Too bright (fade to white)
         return False
         
     # 2. Check Contrast / Variance
-    # A solid color screen (like a logo or black screen) has very low variance
     variance = np.var(gray)
-    if variance < 50: # Relaxed from 200 to allow more frames (especially for dark trailers)
+    if variance < 50:  # Solid color or near-solid
         return False
         
     return True
 
-def search_movies(query: str) -> list[dict]:
+
+async def search_movies(query: str) -> list[dict]:
     """
-    Searches YouTube for the query and returns a list of results.
+    Searches YouTube for movie trailers matching the query.
+    Uses lightweight HTML scraping + oEmbed (no yt-dlp needed).
     """
     search_query = f"{query} official trailer 4k"
-    ydl_opts = get_ydl_opts({
-        'format': 'best[ext=mp4]/best',
-        'default_search': 'ytsearch5:',
-        'extract_flat': True,
-    })
-    
     try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            logger.info(f"🔎 Starting search for: '{search_query}' using proxy: {ydl_opts.get('proxy')}")
-            info = ydl.extract_info(f"ytsearch5:{search_query}", download=False)
-            results = []
-            
-            if info and 'entries' in info:
-                for entry in info['entries']:
-                    if not entry: continue
-                    url = entry.get('url') or entry.get('webpage_url') or ""
-                    if not url or url.startswith('ytsearch'): continue
-                    
-                    results.append({
-                        'title': entry.get('title', 'Unknown Title'),
-                        'url': url,
-                        'thumbnail': entry.get('thumbnail', None),
-                        'duration': entry.get('duration', 0),
-                        'view_count': entry.get('view_count', 0)
-                    })
-            
-            if results:
-                logger.info(f"✅ Successfully extracted {len(results)} valid results")
-                return results
-
+        results = await search_youtube(search_query, max_results=5)
+        if results:
+            logger.info(f"✅ Found {len(results)} results for '{query}'")
+            return results
     except Exception as e:
-        logger.warning(f"Initial search failed: {e}. Attempting fallback...")
-
-    # Fallback: Try with a more generic client and no extract_flat
-    try:
-        fallback_opts = {
-            'quiet': True,
-            'no_warnings': True,
-            'format': 'best',
-            'proxy': ydl_opts.get('proxy'),
-            'http_headers': ydl_opts.get('http_headers', {})
-        }
-        with yt_dlp.YoutubeDL(fallback_opts) as ydl:
-            logger.info(f"🔎 Fallback search for: '{search_query}'")
-            info = ydl.extract_info(f"ytsearch3:{search_query}", download=False)
-            results = []
-            if info and 'entries' in info:
-                for entry in info['entries']:
-                    if not entry: continue
-                    url = entry.get('url') or entry.get('webpage_url') or ""
-                    if url and not url.startswith('ytsearch'):
-                        results.append({
-                            'title': entry.get('title', 'Unknown Title'),
-                            'url': url,
-                            'thumbnail': entry.get('thumbnail', None),
-                            'duration': entry.get('duration', 0)
-                        })
-            if results: return results
-    except Exception as e2:
-        logger.warning(f"Fallback failed: {e2}")
-
-    raise RuntimeError(f"Video search is currently unavailable. Please try providing a direct YouTube URL instead.")
+        logger.warning(f"YouTube search failed: {e}")
+    
+    raise RuntimeError("Video search is currently unavailable. Please try providing a direct URL instead.")
 
 
 def extract_frame_from_video(video_path: str, timestamp: float = None) -> np.ndarray:
+    """Extract a single frame from a local video file."""
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
         raise ValueError("Could not open video file")
@@ -177,55 +79,15 @@ def extract_frame_from_video(video_path: str, timestamp: float = None) -> np.nda
     frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
     return frame_rgb
 
-def extract_frame_from_url(url: str, timestamp: float = 0) -> np.ndarray:
-    if "youtube.com" in url or "youtu.be" in url or "vimeo.com" in url:
-        ydl_opts = get_ydl_opts({'format': 'best[ext=mp4]/best'})
-        try:
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(url, download=False)
-                video_url = info['url']
-        except Exception:
-            ydl_opts['extractor_args']['youtube']['player_client'] = ['android']
-            ydl_opts['http_headers']['User-Agent'] = 'com.google.android.youtube/17.36.4 (Linux; U; Android 12; GB) gzip'
-            try:
-                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                    info = ydl.extract_info(url, download=False)
-                    video_url = info['url']
-            except Exception as e2:
-                raise RuntimeError(f"Failed to extract video URL: {str(e2)}")
-    else:
-        video_url = url
-    
-    # Get headers and proxy from yt-dlp to pass to ffmpeg
-    ydl_opts = get_ydl_opts()
-    user_agent = ydl_opts['http_headers'].get('User-Agent')
-    proxy = ydl_opts.get('proxy')
-    
-    input_args = {}
-    
-    # Critical: Pass full headers for YouTube consistency
-    ffmpeg_headers = [f"User-Agent: {user_agent}"]
-    if "youtube.com" in video_url or "googlevideo.com" in video_url:
-        ffmpeg_headers.append("Referer: https://www.youtube.com/")
-        # If cookies are available in environment, pass them? 
-        # Actually, yt-dlp's url is usually signed enough, but UA MUST match.
-        
-    input_args['headers'] = "\r\n".join(ffmpeg_headers) + "\r\n"
-    
-    # If a proxy is being used by yt-dlp, ffmpeg MUST use it too
-    # because the video_url is likely IP-bound to the proxy
-    env = os.environ.copy()
-    if proxy:
-        logger.info(f"Passing proxy to ffmpeg: {proxy}")
-        env['http_proxy'] = proxy
-        env['https_proxy'] = proxy
 
+def extract_frame_at_timestamp(video_path: str, timestamp: float) -> np.ndarray:
+    """Extract a frame at a specific timestamp using ffmpeg (more reliable for remote-downloaded files)."""
     try:
         out, _ = (
             ffmpeg
-            .input(video_url, ss=timestamp, **input_args)
+            .input(video_path, ss=timestamp)
             .output('pipe:', vframes=1, format='image2', vcodec='png')
-            .run(capture_stdout=True, capture_stderr=True, env=env)
+            .run(capture_stdout=True, capture_stderr=True)
         )
         image = Image.open(io.BytesIO(out))
         return np.array(image)
@@ -234,69 +96,90 @@ def extract_frame_from_url(url: str, timestamp: float = 0) -> np.ndarray:
     except Exception as e:
         raise RuntimeError(f"Frame extraction failed: {str(e)}")
 
-def extract_multiple_frames_from_url(url: str, target_samples: int = 5) -> list[np.ndarray]:
+
+async def extract_frame_from_url(url: str, timestamp: float = 0) -> np.ndarray:
     """
-    Extracts frames, filters out bad ones (dark/blurry), and returns the best target_samples.
+    Download a video from URL via Cobalt, extract a frame, clean up.
+    Supports YouTube, Instagram, TikTok, Twitter, Reddit, Vimeo, etc.
     """
-    ydl_opts = get_ydl_opts({'format': 'best[ext=mp4]/best'})
+    video_path = await download_video(url, quality="720")
     
     try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=False)
-            video_url = info['url']
-            duration = info.get('duration', 60)
-    except Exception:
-        ydl_opts['extractor_args']['youtube']['player_client'] = ['android']
-        ydl_opts['http_headers']['User-Agent'] = 'com.google.android.youtube/17.36.4 (Linux; U; Android 12; GB) gzip'
-        try:
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(url, download=False)
-                video_url = info['url']
-                duration = info.get('duration', 60)
-        except Exception as e2:
-             raise RuntimeError(f"Failed to extract video URL: {str(e2)}")
+        frame = extract_frame_at_timestamp(video_path, timestamp)
+        return frame
+    finally:
+        cleanup_download(video_path)
 
-    valid_frames = []
-    attempts = 0
-    max_attempts = target_samples * 4 # Try 4x as many timestamps as needed
-    
-    if duration < 5: duration = 5
-    
-    # Generate more timestamps than needed to allow for filtering
-    timestamps = sorted([random.uniform(duration * 0.1, duration * 0.9) for _ in range(max_attempts)])
-    
-    for ts in timestamps:
-        try:
-            frame = extract_frame_from_url(video_url, ts)
-            if is_frame_useful(frame):
-                valid_frames.append(frame)
-                logger.info(f"✅ Accepted frame at {ts}s")
-            else:
-                logger.info(f"❌ Rejected frame at {ts}s (dark/blurry)")
-                
-            if len(valid_frames) >= target_samples:
-                break
-        except Exception as e:
-            logger.warning(f"Failed to extract frame at {ts}: {e}")
 
-    if not valid_frames:
-        # If strict filtering rejected everything, try to just take ANY frame
-        logger.warning(f"Strict filtering failed for '{url}'. Attempting to extract ANY first valid frame...")
-        try:
-            frame = extract_frame_from_url(video_url, duration / 2)
-            return [frame]
-        except Exception as e:
-            raise ValueError(f"Could not extract any frames from video: {str(e)}")
+async def extract_multiple_frames_from_url(url: str, target_samples: int = 5) -> list[np.ndarray]:
+    """
+    Download video via Cobalt, extract multiple frames, filter bad ones.
+    Returns the best target_samples frames for color analysis.
+    """
+    video_path = await download_video(url, quality="720")
+    
+    try:
+        # Get video duration
+        cap = cv2.VideoCapture(video_path)
+        if not cap.isOpened():
+            raise ValueError("Could not open downloaded video")
         
-    return valid_frames[:target_samples]
+        fps = cap.get(cv2.CAP_PROP_FPS) or 30
+        frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        duration = frame_count / fps if fps > 0 else 60
+        cap.release()
+        
+        if duration < 5:
+            duration = 5
+        
+        valid_frames = []
+        max_attempts = target_samples * 4
+        
+        # Generate random timestamps in the middle 80% of the video
+        timestamps = sorted([
+            random.uniform(duration * 0.1, duration * 0.9) 
+            for _ in range(max_attempts)
+        ])
+        
+        for ts in timestamps:
+            try:
+                frame = extract_frame_at_timestamp(video_path, ts)
+                if is_frame_useful(frame):
+                    valid_frames.append(frame)
+                    logger.info(f"✅ Accepted frame at {ts:.1f}s")
+                else:
+                    logger.info(f"❌ Rejected frame at {ts:.1f}s (dark/blurry)")
+                    
+                if len(valid_frames) >= target_samples:
+                    break
+            except Exception as e:
+                logger.warning(f"Failed to extract frame at {ts:.1f}s: {e}")
+        
+        if not valid_frames:
+            # Last resort: take a frame from the middle
+            logger.warning("Strict filtering rejected all frames. Taking middle frame.")
+            try:
+                frame = extract_frame_at_timestamp(video_path, duration / 2)
+                return [frame]
+            except Exception as e:
+                raise ValueError(f"Could not extract any frames: {str(e)}")
+            
+        return valid_frames[:target_samples]
+    
+    finally:
+        cleanup_download(video_path)
 
-# --- Color Science Functions ---
+
+# --- Color Science Functions (unchanged) ---
+
 def get_lab_stats(image_np):
-    if image_np.shape[2] == 4: image_np = cv2.cvtColor(image_np, cv2.COLOR_RGBA2RGB)
+    if image_np.shape[2] == 4:
+        image_np = cv2.cvtColor(image_np, cv2.COLOR_RGBA2RGB)
     img_lab = cv2.cvtColor(image_np.astype(np.uint8), cv2.COLOR_RGB2LAB).astype(np.float32)
     mean = np.mean(img_lab, axis=(0, 1))
     std = np.std(img_lab, axis=(0, 1))
     return mean, std
+
 
 def get_aggregated_lab_stats(frames: list[np.ndarray]):
     means, stds = [], []
@@ -308,6 +191,7 @@ def get_aggregated_lab_stats(frames: list[np.ndarray]):
     avg_std = np.mean(stds, axis=0)
     return avg_mean, avg_std
 
+
 def generate_identity_lut(size=33):
     x = np.linspace(0, 255, size)
     y = np.linspace(0, 255, size)
@@ -315,6 +199,7 @@ def generate_identity_lut(size=33):
     B, G, R = np.meshgrid(z, y, x, indexing='ij')
     lut = np.stack([R, G, B], axis=-1)
     return lut.astype(np.float32)
+
 
 def apply_color_transfer(identity_lut, target_mean, target_std):
     h, w, d, c = identity_lut.shape
@@ -346,6 +231,7 @@ def apply_color_transfer(identity_lut, target_mean, target_std):
     result_rgb = np.clip(result_rgb, 0, 255)
     return result_rgb.reshape(h, w, d, 3)
 
+
 def write_cube_file(lut_rgb, file_path, size=33):
     with open(file_path, 'w') as f:
         f.write(f'TITLE "Generated by Color Stealer"\n')
@@ -356,6 +242,7 @@ def write_cube_file(lut_rgb, file_path, size=33):
                     r, g, b = lut_rgb[z, y, x]
                     f.write(f'{r/255.0:.6f} {g/255.0:.6f} {b/255.0:.6f}\n')
 
+
 # --- Processing Pipelines ---
 
 def process_image_to_lut(image_np, output_lut_path):
@@ -364,23 +251,27 @@ def process_image_to_lut(image_np, output_lut_path):
     transformed_lut = apply_color_transfer(identity, target_mean, target_std)
     write_cube_file(transformed_lut, output_lut_path, 33)
 
+
 def process_video_to_lut(video_path, output_lut_path, output_frame_path=None, timestamp=None):
     frame = extract_frame_from_video(video_path, timestamp)
     if output_frame_path:
         Image.fromarray(frame).save(output_frame_path)
     process_image_to_lut(frame, output_lut_path)
 
-def process_url_to_lut(url, timestamp, output_lut_path, output_frame_path=None):
-    frame = extract_frame_from_url(url, timestamp)
+
+async def process_url_to_lut(url, timestamp, output_lut_path, output_frame_path=None):
+    """Download video via Cobalt, extract frame, generate LUT."""
+    frame = await extract_frame_from_url(url, timestamp)
     if output_frame_path:
         Image.fromarray(frame).save(output_frame_path)
     process_image_to_lut(frame, output_lut_path)
 
-def process_movie_selection_to_lut(video_url, output_lut_path, output_frame_path):
+
+async def process_movie_selection_to_lut(video_url, output_lut_path, output_frame_path):
     """
-    Processes a specific selected movie trailer URL.
+    Download video via Cobalt, sample multiple frames, generate averaged LUT.
     """
-    frames = extract_multiple_frames_from_url(video_url, target_samples=5)
+    frames = await extract_multiple_frames_from_url(video_url, target_samples=5)
     avg_mean, avg_std = get_aggregated_lab_stats(frames)
     identity = generate_identity_lut(33)
     transformed_lut = apply_color_transfer(identity, avg_mean, avg_std)
